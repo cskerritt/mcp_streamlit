@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Life Care Plan Table Generator</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <style>
+        .sidebar {
+            min-height: 100vh;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .main-content {
+            background-color: #f8f9fa;
+            min-height: 100vh;
+        }
+        .card {
+            box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+            border: none;
+            margin-bottom: 1.5rem;
+        }
+        .card-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-bottom: none;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+        }
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+        }
+        .nav-link {
+            color: rgba(255, 255, 255, 0.8) !important;
+            border-radius: 0.5rem;
+            margin: 0.25rem 0;
+        }
+        .nav-link:hover, .nav-link.active {
+            background-color: rgba(255, 255, 255, 0.1);
+            color: white !important;
+        }
+        .service-item {
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-bottom: 0.5rem;
+        }
+        .service-type-badge {
+            font-size: 0.75rem;
+        }
+        .cost-summary {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            color: white;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            text-align: center;
+        }
+        .loading {
+            display: none;
+        }
+        .table-responsive {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        #charts-container {
+            display: none;
+        }
+        .alert-dismissible {
+            position: relative;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <div class="col-md-3 sidebar p-4">
+                <h3 class="mb-4">
+                    <i class="fas fa-heartbeat me-2"></i>
+                    LCP Generator
+                </h3>
+                
+                <nav class="nav flex-column">
+                    <a class="nav-link active" href="#dashboard-section" onclick="showSection('dashboard')">
+                        <i class="fas fa-tachometer-alt me-2"></i>Dashboard
+                    </a>
+                    <a class="nav-link" href="#evaluee-section" onclick="showSection('evaluee')">
+                        <i class="fas fa-user me-2"></i>Evaluee Management
+                    </a>
+                    <a class="nav-link" href="#tables-section" onclick="showSection('tables')">
+                        <i class="fas fa-table me-2"></i>Service Tables
+                    </a>
+                    <a class="nav-link" href="#growth-rates-section" onclick="showSection('growth-rates')">
+                        <i class="fas fa-chart-line me-2"></i>Growth Rates
+                    </a>
+                    <a class="nav-link" href="#calculations-section" onclick="showSection('calculations')">
+                        <i class="fas fa-calculator me-2"></i>Calculations
+                    </a>
+                    <a class="nav-link" href="#settings-section" onclick="showSection('settings')">
+                        <i class="fas fa-cog me-2"></i>Settings
+                    </a>
+                    <a class="nav-link" href="#export-section" onclick="showSection('export')">
+                        <i class="fas fa-download me-2"></i>Export Results
+                    </a>
+                </nav>
+
+                <hr class="my-4">
+
+                <h5>Saved Plans</h5>
+                <div class="mb-2">
+                    <button class="btn btn-outline-light btn-sm w-100 mb-2" onclick="loadSavedPlans()">
+                        <i class="fas fa-database me-1"></i>View Saved Plans
+                    </button>
+                </div>
+                <div id="saved-plans-list" style="display: none;">
+                    <div class="mb-2">
+                        <select class="form-select form-select-sm" id="saved-plans-select">
+                            <option value="">Select a saved plan...</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-success btn-sm w-100 mb-1" onclick="loadSelectedPlan()">
+                        <i class="fas fa-upload me-1"></i>Load Plan
+                    </button>
+                    <button class="btn btn-danger btn-sm w-100 mb-2" onclick="deleteSelectedPlan()">
+                        <i class="fas fa-trash me-1"></i>Delete Plan
+                    </button>
+                </div>
+
+                <h5>File Operations</h5>
+                <div class="mb-3">
+                    <label for="configFile" class="form-label">Upload Config</label>
+                    <input type="file" class="form-control form-control-sm" id="configFile" accept=".json">
+                </div>
+                <button class="btn btn-outline-light btn-sm w-100 mb-2" onclick="downloadConfig()">
+                    <i class="fas fa-download me-1"></i>Download Config
+                </button>
+                <button class="btn btn-outline-light btn-sm w-100 mb-2" onclick="loadSampleData()">
+                    <i class="fas fa-database me-1"></i>Load Sample Data
+                </button>
+                <button class="btn btn-outline-light btn-sm w-100" onclick="clearAll()">
+                    <i class="fas fa-trash me-1"></i>Clear All
+                </button>
+            </div>
+
+            <!-- Main Content -->
+            <div class="col-md-9 main-content p-4">
+                <!-- Alert Container -->
+                <div id="alert-container"></div>
+
+                <!-- Dashboard Section -->
+                <div id="dashboard-section" class="section">
+                    <div class="card">
+                        <div class="card-header">
+                            <h4 class="mb-0">
+                                <i class="fas fa-tachometer-alt me-2"></i>Dashboard
+                            </h4>
+                        </div>
+                        <div class="card-body">
+                            <div id="dashboard-content">
+                                <div class="row">
+                                    <div class="col-12">
+                                        <div class="text-center py-5">
+                                            <i class="fas fa-chart-pie fa-4x text-muted mb-3"></i>
+                                            <h5>Welcome to Life Care Plan Generator</h5>
+                                            <p class="text-muted">Create a new evaluee or load sample data to get started</p>
+                                            <div class="d-flex justify-content-center gap-3">
+                                                <button class="btn btn-primary" onclick="showSection('evaluee')">
+                                                    <i class="fas fa-user me-2"></i>Create New Evaluee
+                                                </button>
+                                                <button class="btn btn-outline-primary" onclick="loadSampleData()">
+                                                    <i class="fas fa-database me-2"></i>Load Sample Data
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Evaluee Section -->
+                <div id="evaluee-section" class="section" style="display: none;">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h4 class="mb-0">
+                                <i class="fas fa-user me-2"></i>Evaluee Management
+                            </h4>
+                            <div>
+                                <button class="btn btn-outline-primary btn-sm" onclick="editCurrentEvaluee()" id="edit-evaluee-btn" style="display: none;">
+                                    <i class="fas fa-edit me-1"></i>Edit
+                                </button>
+                                <button class="btn btn-primary btn-sm" onclick="createNewEvaluee()" id="new-evaluee-btn">
+                                    <i class="fas fa-plus me-1"></i>New Evaluee
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <!-- Current Evaluee Display -->
+                            <div id="current-evaluee-display" style="display: none;">
+                                <div class="row">
+                                    <div class="col-md-8">
+                                        <div class="d-flex align-items-center mb-3">
+                                            <div class="me-3">
+                                                <i class="fas fa-user-circle fa-3x text-primary"></i>
+                                            </div>
+                                            <div>
+                                                <h5 class="mb-1" id="current-evaluee-name">-</h5>
+                                                <p class="text-muted mb-0">
+                                                    Age: <span id="current-evaluee-age">-</span> | 
+                                                    Base Year: <span id="current-evaluee-base-year">-</span> | 
+                                                    Projection: <span id="current-evaluee-projection">-</span> years
+                                                </p>
+                                                <small class="text-muted">
+                                                    Discount Rate: <span id="current-evaluee-discount">-</span>% | 
+                                                    Present Value: <span id="current-evaluee-pv-status">-</span>
+                                                </small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="text-end">
+                                            <div class="row text-center">
+                                                <div class="col-6">
+                                                    <h6 class="text-primary" id="evaluee-tables-count">0</h6>
+                                                    <small class="text-muted">Tables</small>
+                                                </div>
+                                                <div class="col-6">
+                                                    <h6 class="text-success" id="evaluee-services-count">0</h6>
+                                                    <small class="text-muted">Services</small>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <hr>
+                                
+                                <div class="row">
+                                    <div class="col-md-12">
+                                        <h6>Quick Actions</h6>
+                                        <div class="btn-group" role="group">
+                                            <button class="btn btn-outline-primary" onclick="showSection('tables')">
+                                                <i class="fas fa-table me-1"></i>Manage Tables
+                                            </button>
+                                            <button class="btn btn-outline-success" onclick="showSection('calculations')">
+                                                <i class="fas fa-calculator me-1"></i>View Calculations
+                                            </button>
+                                            <button class="btn btn-outline-info" onclick="showSection('growth-rates')">
+                                                <i class="fas fa-chart-line me-1"></i>Growth Rates
+                                            </button>
+                                            <button class="btn btn-outline-secondary" onclick="showSection('export')">
+                                                <i class="fas fa-download me-1"></i>Export Reports
+                                            </button>
+                                        </div>
+                                        
+                                        <h6 class="mt-3">Evaluee Management</h6>
+                                        <div class="btn-group" role="group">
+                                            <button class="btn btn-outline-warning" onclick="editEvaluee()">
+                                                <i class="fas fa-edit me-1"></i>Edit Evaluee
+                                            </button>
+                                            <button class="btn btn-outline-danger" onclick="deleteEvaluee()">
+                                                <i class="fas fa-trash me-1"></i>Delete Evaluee
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Evaluee Form -->
+                            <div id="evaluee-form-container">
+                                <form id="evalueeForm">
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="evaluee_name" class="form-label">Evaluee Name *</label>
+                                                <input type="text" class="form-control" id="evaluee_name" required>
+                                            </div>
+                                            <div class="mb-3">
+                                                <label for="current_age" class="form-label">Current Age *</label>
+                                                <input type="number" class="form-control" id="current_age" min="0.1" max="120" step="0.1" required>
+                                            </div>
+                                            <div class="mb-3">
+                                                <label for="base_year" class="form-label">Base Year</label>
+                                                <input type="number" class="form-control" id="base_year" value="2025">
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="projection_years" class="form-label">Projection Years</label>
+                                                <input type="number" class="form-control" id="projection_years" value="30" min="0.1" max="100" step="0.1">
+                                            </div>
+                                            <div class="mb-3">
+                                                <label for="discount_rate" class="form-label">Discount Rate (%)</label>
+                                                <input type="number" class="form-control" id="discount_rate" value="3.0" step="0.01" min="0" max="50">
+                                            </div>
+                                            <div class="mb-3">
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="checkbox" id="discount_calculations" checked>
+                                                    <label class="form-check-label" for="discount_calculations">
+                                                        Enable Present Value Calculations
+                                                    </label>
+                                                    <div class="form-text">When enabled, future costs are discounted to present value using the discount rate above.</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="d-flex justify-content-between">
+                                        <button type="button" class="btn btn-secondary" onclick="cancelEvalueeEdit()" id="cancel-evaluee-btn" style="display: none;">
+                                            <i class="fas fa-times me-2"></i>Cancel
+                                        </button>
+                                        <button type="submit" class="btn btn-primary" id="save-evaluee-btn">
+                                            <i class="fas fa-save me-2"></i>Create Life Care Plan
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tables Section -->
+                <div id="tables-section" class="section" style="display: none;">
+                    <div class="card">
+                        <div class="card-header">
+                            <h4 class="mb-0">
+                                <i class="fas fa-table me-2"></i>Service Tables
+                            </h4>
+                        </div>
+                        <div class="card-body">
+                            <!-- Add Table Form -->
+                            <div class="row mb-4">
+                                <div class="col-md-12">
+                                    <div class="card">
+                                        <div class="card-header">
+                                            <h6 class="mb-0">
+                                                <i class="fas fa-plus me-2"></i>Add New Service Table
+                                            </h6>
+                                        </div>
+                                        <div class="card-body">
+                                            <form id="addTableForm" onsubmit="addTable(event)">
+                                                <div class="row">
+                                                    <div class="col-md-6">
+                                                        <div class="mb-3">
+                                                            <label for="new_table_name" class="form-label">Table Name *</label>
+                                                            <input type="text" class="form-control" id="new_table_name" required 
+                                                                   placeholder="e.g., Medications, Physical Therapy, Equipment">
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-md-4">
+                                                        <div class="mb-3">
+                                                            <label for="table_inflation_rate" class="form-label">Default Inflation Rate (%)</label>
+                                                            <input type="number" class="form-control" id="table_inflation_rate" 
+                                                                   value="3.5" step="0.01" min="0" max="50">
+                                                            <div class="form-text">This will be the default rate for services in this table</div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-md-2">
+                                                        <div class="mb-3">
+                                                            <label class="form-label">&nbsp;</label>
+                                                            <button type="submit" class="btn btn-primary w-100">
+                                                                <i class="fas fa-plus me-1"></i>Add Table
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Tables Container -->
+                            <div id="tables-container">
+                                <div class="alert alert-info">
+                                    <i class="fas fa-info-circle me-2"></i>
+                                    Create an evaluee first, then add service tables and services.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Growth Rates Section -->
+                <div id="growth-rates-section" class="section" style="display: none;">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h4 class="mb-0">
+                                <i class="fas fa-chart-line me-2"></i>Table Growth Rates Management
+                            </h4>
+                            <button class="btn btn-light" onclick="refreshGrowthRates()">
+                                <i class="fas fa-refresh me-2"></i>Refresh
+                            </button>
+                        </div>
+                        <div class="card-body">
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle me-2"></i>
+                                Monitor and adjust inflation rates for each service table. Changes affect all services in the table.
+                            </div>
+
+                            <!-- Growth Rates Container -->
+                            <div id="growth-rates-container">
+                                <div class="alert alert-warning">
+                                    <i class="fas fa-exclamation-triangle me-2"></i>
+                                    Create service tables first to manage their growth rates.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Settings Section -->
+                <div id="settings-section" class="section" style="display: none;">
+                    <div class="card">
+                        <div class="card-header">
+                            <h4 class="mb-0">
+                                <i class="fas fa-cog me-2"></i>Application Settings
+                            </h4>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <!-- Application Settings -->
+                                <div class="col-md-12">
+                                    <div class="card">
+                                        <div class="card-header">
+                                            <h6 class="mb-0">
+                                                <i class="fas fa-sliders-h me-2"></i>Application Settings
+                                            </h6>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="mb-3">
+                                                <label class="form-label">Default Base Year</label>
+                                                <input type="number" class="form-control" id="default-base-year" value="2025">
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">Default Projection Years</label>
+                                                <input type="number" class="form-control" id="default-projection-years" value="30" step="0.1">
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">Default Discount Rate (%)</label>
+                                                <input type="number" class="form-control" id="default-discount-rate" value="3.5" step="0.01">
+                                            </div>
+                                            
+                                            <hr>
+                                            
+                                            <div class="form-check mb-3">
+                                                <input class="form-check-input" type="checkbox" id="auto-calculate" checked>
+                                                <label class="form-check-label" for="auto-calculate">
+                                                    Auto-calculate when adding services
+                                                </label>
+                                            </div>
+                                            
+                                            <div class="form-check mb-3">
+                                                <input class="form-check-input" type="checkbox" id="show-welcome" checked>
+                                                <label class="form-check-label" for="show-welcome">
+                                                    Show welcome message on startup
+                                                </label>
+                                            </div>
+                                            
+                                            <button class="btn btn-primary btn-sm w-100" onclick="saveApplicationSettings()">
+                                                <i class="fas fa-save me-1"></i>Save Settings
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Export/Import Settings -->
+                            <div class="row mt-4">
+                                <div class="col-12">
+                                    <div class="card">
+                                        <div class="card-header">
+                                            <h6 class="mb-0">
+                                                <i class="fas fa-exchange-alt me-2"></i>Import/Export Settings
+                                            </h6>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="row">
+                                                <div class="col-md-6">
+                                                    <h6>Export Current Settings</h6>
+                                                    <p class="text-muted small">Download your current template and application settings</p>
+                                                    <button class="btn btn-outline-primary btn-sm" onclick="exportSettings()">
+                                                        <i class="fas fa-download me-1"></i>Export Settings
+                                                    </button>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <h6>Import Settings</h6>
+                                                    <p class="text-muted small">Upload previously saved settings file</p>
+                                                    <input type="file" class="form-control form-control-sm" id="settings-import" accept=".json">
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Calculations Section -->
+                <div id="calculations-section" class="section" style="display: none;">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h4 class="mb-0">
+                                <i class="fas fa-calculator me-2"></i>Cost Calculations
+                            </h4>
+                            <button class="btn btn-light" onclick="calculateCosts()">
+                                <i class="fas fa-refresh me-2"></i>Recalculate
+                            </button>
+                        </div>
+                        <div class="card-body">
+                            <div id="calculations-loading" class="loading text-center py-4">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Calculating...</span>
+                                </div>
+                                <p class="mt-2">Calculating costs...</p>
+                            </div>
+
+                            <!-- Summary Statistics -->
+                            <div id="summary-stats" style="display: none;"></div>
+
+                            <!-- Charts Container -->
+                            <div id="charts-container">
+                                <div class="row">
+                                    <div class="col-12">
+                                        <div id="present-value-chart" style="height: 400px;"></div>
+                                    </div>
+                                </div>
+                                <div class="row mt-4">
+                                    <div class="col-12">
+                                        <div id="comparison-chart" style="height: 400px;"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Detailed Cost Schedule -->
+                            <div id="cost-schedule" style="display: none;">
+                                <h5 class="mt-4">Detailed Cost Schedule</h5>
+                                <div class="table-responsive">
+                                    <table class="table table-striped" id="cost-table">
+                                        <thead class="table-dark">
+                                            <tr>
+                                                <th>Year</th>
+                                                <th>Age</th>
+                                                <th>Total Nominal</th>
+                                                <th>Present Value</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="cost-table-body">
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Export Section -->
+                <div id="export-section" class="section" style="display: none;">
+                    <div class="card">
+                        <div class="card-header">
+                            <h4 class="mb-0">
+                                <i class="fas fa-download me-2"></i>Export Results
+                            </h4>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <div class="card text-center">
+                                        <div class="card-body">
+                                            <i class="fas fa-file-excel fa-3x text-success mb-3"></i>
+                                            <h5>Excel Report</h5>
+                                            <p>Comprehensive spreadsheet with all data and calculations</p>
+                                            <button class="btn btn-success" onclick="exportFile('excel')">
+                                                <i class="fas fa-download me-2"></i>Download Excel
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="card text-center">
+                                        <div class="card-body">
+                                            <i class="fas fa-file-word fa-3x text-primary mb-3"></i>
+                                            <h5>Word Document</h5>
+                                            <p>Professional report with tables and charts</p>
+                                            <button class="btn btn-primary" onclick="exportFile('word')">
+                                                <i class="fas fa-download me-2"></i>Download Word
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="card text-center">
+                                        <div class="card-body">
+                                            <i class="fas fa-file-pdf fa-3x text-danger mb-3"></i>
+                                            <h5>PDF Report</h5>
+                                            <p>Finalized document ready for presentation</p>
+                                            <button class="btn btn-danger" onclick="exportFile('pdf')">
+                                                <i class="fas fa-download me-2"></i>Download PDF
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Growth Rate Update Modal -->
+    <div class="modal fade" id="growthRateModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Update Table Inflation Rate</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="growthRateForm">
+                        <input type="hidden" id="growth_table_name">
+                        <div class="mb-3">
+                            <label for="current_rate_display" class="form-label">Current Average Rate</label>
+                            <input type="text" class="form-control" id="current_rate_display" readonly>
+                        </div>
+                        <div class="mb-3">
+                            <label for="new_inflation_rate" class="form-label">New Inflation Rate (%) *</label>
+                            <input type="number" class="form-control" id="new_inflation_rate" step="0.01" min="0" max="50" required>
+                        </div>
+                        <div class="alert alert-warning">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            This will update the inflation rate for ALL services in this table.
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="updateTableInflation()">Update Rate</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Service Modal -->
+    <div class="modal fade" id="serviceModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Service</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="serviceForm">
+                        <input type="hidden" id="service_table_name" name="table_name">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="service_name" class="form-label">Service Name *</label>
+                                    <input type="text" class="form-control" id="service_name" name="service_name" required>
+                                </div>
+                                <!-- Cost Input Section -->
+                                <div class="mb-3">
+                                    <div class="form-check mb-2">
+                                        <input class="form-check-input" type="checkbox" id="use_cost_range" name="use_cost_range" onchange="toggleCostRange()">
+                                        <label class="form-check-label" for="use_cost_range">
+                                            Use Cost Range (High/Low)
+                                        </label>
+                                    </div>
+                                    
+                                    <!-- Single Cost Input -->
+                                    <div id="single-cost-input">
+                                        <label for="unit_cost" class="form-label">Unit Cost ($) *</label>
+                                        <input type="number" class="form-control" id="unit_cost" name="unit_cost" step="0.01" min="0" required>
+                                    </div>
+                                    
+                                    <!-- Cost Range Inputs -->
+                                    <div id="cost-range-inputs" style="display: none;">
+                                        <label class="form-label">Cost Range ($) *</label>
+                                        <div class="row">
+                                            <div class="col-6">
+                                                <input type="number" class="form-control" id="cost_range_low" name="cost_range_low" step="0.01" min="0" placeholder="Low">
+                                            </div>
+                                            <div class="col-6">
+                                                <input type="number" class="form-control" id="cost_range_high" name="cost_range_high" step="0.01" min="0" placeholder="High">
+                                            </div>
+                                        </div>
+                                        <div class="form-text">Average: $<span id="cost-average">0.00</span></div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Frequency Section -->
+                                <div class="mb-3">
+                                    <div class="d-flex align-items-center mb-2">
+                                        <label for="frequency_per_year" class="form-label me-3 mb-0">Frequency per Year *</label>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" id="is_one_time_cost" name="is_one_time_cost" onchange="toggleOneTimeCost()">
+                                            <label class="form-check-label" for="is_one_time_cost">
+                                                One-time cost
+                                            </label>
+                                        </div>
+                                    </div>
+                                    <input type="number" class="form-control" id="frequency_per_year" name="frequency_per_year" min="1" required>
+                                    <div class="form-text">For one-time costs, frequency is automatically set to 1</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="inflation_rate" class="form-label">Inflation Rate (%) *</label>
+                                    <input type="number" class="form-control" id="inflation_rate" name="inflation_rate" step="0.01" min="0" max="50" required>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="service_type" class="form-label">Service Type *</label>
+                                    <select class="form-select" id="service_type" name="service_type" onchange="toggleServiceFields()" required>
+                                        <option value="">Select type...</option>
+                                        <option value="recurring">Recurring (Start/End Years)</option>
+                                        <option value="discrete">Discrete (Specific Years)</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Recurring Service Fields -->
+                        <div id="recurring-fields" style="display: none;">
+                            <!-- Duration Input Section -->
+                            <div class="row mb-3">
+                                <div class="col-12">
+                                    <div class="card border-info">
+                                        <div class="card-header bg-info text-white">
+                                            <h6 class="mb-0"><i class="fas fa-clock me-2"></i>Service Duration</h6>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="row">
+                                                <div class="col-md-4">
+                                                    <label for="service_duration_years" class="form-label">Duration (Years)</label>
+                                                    <input type="number" class="form-control" id="service_duration_years" 
+                                                           min="0.1" max="50" step="0.1" placeholder="e.g., 10"
+                                                           onchange="calculateYearsFromDuration()">
+                                                    <div class="form-text">How many years should this service run?</div>
+                                                </div>
+                                                <div class="col-md-4">
+                                                    <label for="duration_start_offset" class="form-label">Start Offset (Years)</label>
+                                                    <input type="number" class="form-control" id="duration_start_offset" 
+                                                           value="0" min="0" max="30" step="0.1"
+                                                           onchange="calculateYearsFromDuration()">
+                                                    <div class="form-text">Years after base year to start</div>
+                                                </div>
+                                                <div class="col-md-4">
+                                                    <button type="button" class="btn btn-outline-primary btn-sm mt-4" onclick="calculateYearsFromDuration()">
+                                                        <i class="fas fa-calculator me-1"></i>Calculate Years
+                                                    </button>
+                                                    <div class="form-text">Click to auto-calculate start/end years</div>
+                                                </div>
+                                            </div>
+                                            <div class="row mt-2">
+                                                <div class="col-12">
+                                                    <div id="duration-preview" class="alert alert-light" style="display: none;">
+                                                        <small><i class="fas fa-info-circle me-1"></i><span id="duration-preview-text"></span></small>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Manual Year Input Section -->
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label for="start_year" class="form-label">Start Year <small class="text-muted">(auto-calculated)</small></label>
+                                        <input type="number" class="form-control" id="start_year" name="start_year" onchange="updateDurationFromYears()">
+                                        <div class="form-text">You can manually adjust this year if needed</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label for="end_year" class="form-label">End Year <small class="text-muted">(auto-calculated)</small></label>
+                                        <input type="number" class="form-control" id="end_year" name="end_year" onchange="updateDurationFromYears()">
+                                        <div class="form-text">You can manually adjust this year if needed</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Discrete Service Fields -->
+                        <div id="discrete-fields" style="display: none;">
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label for="discrete_start_year" class="form-label">Start Year</label>
+                                    <input type="number" class="form-control" id="discrete_start_year" onchange="updateDiscreteYearOptions()">
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="discrete_end_year" class="form-label">End Year</label>
+                                    <input type="number" class="form-control" id="discrete_end_year" onchange="updateDiscreteYearOptions()">
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Select Occurrence Years</label>
+                                <div id="discrete-year-checkboxes" class="border rounded p-3" style="max-height: 200px; overflow-y: auto;">
+                                    <p class="text-muted">Please set start and end years above to see available options</p>
+                                </div>
+                                <input type="hidden" id="occurrence_years" name="occurrence_years">
+                            </div>
+                        </div>
+
+                        <!-- One-time Cost Fields -->
+                        <div id="one-time-fields" style="display: none;">
+                            <div class="mb-3">
+                                <label for="one_time_cost_year" class="form-label">One-time Cost Year *</label>
+                                <input type="number" class="form-control" id="one_time_cost_year" name="one_time_cost_year">
+                                <div class="form-text">The year when this one-time cost will occur (cost will be grown with inflation to this year)</div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="submit-service-btn" onclick="submitService()">Add Service</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/static/app.js"></script>
+</body>
+</html>
