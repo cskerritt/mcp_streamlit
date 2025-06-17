@@ -395,7 +395,7 @@ class LCPDatabase:
                 for row in rows:
                     evaluees.append({
                         'name': row[0],
-                        'age': row[1],
+                        'current_age': row[1],
                         'created_at': row[2],
                         'updated_at': row[3],
                         'table_count': row[4],
