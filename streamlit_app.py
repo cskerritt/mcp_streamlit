@@ -126,6 +126,7 @@ def create_sidebar():
     page_options = [
         "🏠 Home",
         "👤 Create/Edit Evaluee",
+        "👥 Manage Evaluees",
         "📋 Manage Service Tables",
         "🧮 Calculate & View Results",
         "📊 Export Reports",
@@ -175,46 +176,73 @@ def show_home_page():
                 st.rerun()
         
         with col_c:
-            if st.button("📁 Load Configuration", use_container_width=True):
-                st.session_state.page = "💾 Load/Save Configurations"
+            if st.button("👥 Manage Evaluees", use_container_width=True):
+                st.session_state.page = "👥 Manage Evaluees"
                 st.rerun()
     
     with col2:
-        st.markdown("### Current Status")
+        st.markdown("### 📊 Current Status")
         if st.session_state.lcp_data:
             st.success("✅ Life Care Plan Loaded")
-            st.info(f"**Evaluee:** {st.session_state.lcp_data.evaluee.name}")
-            st.info(f"**Age:** {st.session_state.lcp_data.evaluee.current_age}")
-            st.info(f"**Base Year:** {st.session_state.lcp_data.settings.base_year}")
-            st.info(f"**Projection Years:** {st.session_state.lcp_data.settings.projection_years}")
-            st.info(f"**Service Tables:** {len(st.session_state.lcp_data.tables)}")
-
-            total_services = sum(len(table.services) for table in st.session_state.lcp_data.tables.values())
-            st.info(f"**Total Services:** {total_services}")
-
+            
+            # Create metrics display
+            col_a, col_b = st.columns(2)
+            with col_a:
+                st.metric("Tables", len(st.session_state.lcp_data.tables))
+                st.metric("Age", st.session_state.lcp_data.evaluee.current_age)
+            
+            with col_b:
+                total_services = sum(len(table.services) for table in st.session_state.lcp_data.tables.values())
+                st.metric("Services", total_services)
+                st.metric("Proj. Years", st.session_state.lcp_data.settings.projection_years)
+            
+            st.markdown(f"**👤 Evaluee:** {st.session_state.lcp_data.evaluee.name}")
+            st.markdown(f"**📅 Base Year:** {st.session_state.lcp_data.settings.base_year}")
+            
             # Show last saved status
             if st.session_state.get('last_saved'):
-                st.info(f"**Last Saved:** {st.session_state.last_saved}")
+                st.caption(f"💾 Last saved: {st.session_state.last_saved}")
 
             if total_services > 0:
+                st.markdown("---")
                 if st.button("🧮 Calculate Costs", use_container_width=True):
                     st.session_state.page = "🧮 Calculate & View Results"
                     st.rerun()
         else:
             st.warning("⚠️ No Plan Loaded")
             st.markdown("Create a new plan or load an existing configuration to get started.")
+            
+            # Add helpful links when no plan is loaded
+            st.markdown("**Quick Actions:**")
+            if st.button("👤 Create Evaluee", key="status_create", use_container_width=True):
+                st.session_state.page = "👤 Create/Edit Evaluee"
+                st.rerun()
+            if st.button("👥 View All Evaluees", key="status_manage", use_container_width=True):
+                st.session_state.page = "👥 Manage Evaluees"
+                st.rerun()
 
         # Database status
-        st.markdown("### Database Status")
+        st.markdown("### 💾 Database Status")
         try:
             current_user = auth.get_current_user()
             user_id = current_user['id'] if current_user else None
             evaluees = db.list_evaluees(user_id)
-            st.info(f"**Your Saved Plans:** {len(evaluees)}")
-            if st.session_state.get('auto_save', True):
-                st.success("🔄 Auto-save: ON")
-            else:
-                st.warning("🔄 Auto-save: OFF")
+            
+            # Show database stats
+            total_tables = sum(e.get('table_count', 0) for e in evaluees)
+            total_services = sum(e.get('service_count', 0) for e in evaluees)
+            
+            col_a, col_b = st.columns(2)
+            with col_a:
+                st.metric("Plans", len(evaluees))
+                st.metric("Tables", total_tables)
+            with col_b:
+                st.metric("Services", total_services)
+                if st.session_state.get('auto_save', True):
+                    st.success("🔄 Auto-save ON")
+                else:
+                    st.warning("🔄 Auto-save OFF")
+                    
         except Exception as e:
             st.error(f"Database Error: {str(e)}")
 
@@ -336,6 +364,12 @@ def main():
     if 'page' not in st.session_state:
         st.session_state.page = "🏠 Home"
 
+    # Handle programmatic navigation from other pages
+    if 'navigate_to' in st.session_state:
+        st.session_state.page = st.session_state.navigate_to
+        del st.session_state.navigate_to
+        st.rerun()
+
     selected_page = create_sidebar()
     if selected_page != st.session_state.page:
         st.session_state.page = selected_page
@@ -347,6 +381,9 @@ def main():
     elif st.session_state.page == "👤 Create/Edit Evaluee":
         from pages.create_plan import show_create_plan_page
         show_create_plan_page()
+    elif st.session_state.page == "👥 Manage Evaluees":
+        from pages.manage_evaluees import show_manage_evaluees_page
+        show_manage_evaluees_page()
     elif st.session_state.page == "📋 Manage Service Tables":
         from pages.manage_services import show_manage_services_page
         show_manage_services_page()

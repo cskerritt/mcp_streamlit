@@ -147,7 +147,7 @@ async def add_service(
     table_name: str = Form(...),
     service_name: str = Form(...),
     unit_cost: Optional[float] = Form(None),
-    frequency_per_year: int = Form(...),
+    frequency_per_year: float = Form(...),
     inflation_rate: float = Form(...),
     service_type: Optional[str] = Form(None),  # "recurring" or "discrete" 
     start_year: Optional[int] = Form(None),
