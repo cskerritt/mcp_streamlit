@@ -45,7 +45,7 @@ def show_create_plan_page():
             "Current Age *",
             min_value=0.1,
             max_value=120.0,
-            value=default_age,
+            value=float(default_age),
             step=0.1,
             help="Current age of the evaluee in years (can include decimals for months)."
         )
@@ -70,7 +70,7 @@ def show_create_plan_page():
                 "Base Year *",
                 min_value=2020,
                 max_value=2050,
-                value=default_base_year,
+                value=int(default_base_year),
                 step=1,
                 help="The starting year for cost projections."
             )
@@ -79,7 +79,7 @@ def show_create_plan_page():
                 "Projection Period (Years) *",
                 min_value=1.0,
                 max_value=100.0,
-                value=default_projection_years,
+                value=float(default_projection_years),
                 step=1.0,
                 help="Number of years to project costs into the future."
             )
@@ -89,7 +89,7 @@ def show_create_plan_page():
                 "Discount Rate *",
                 min_value=0.0,
                 max_value=0.20,
-                value=default_discount_rate,
+                value=float(default_discount_rate),
                 step=0.001,
                 format="%.3f",
                 help="Annual discount rate for present value calculations (as decimal, e.g., 0.035 = 3.5%)."

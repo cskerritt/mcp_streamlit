@@ -470,7 +470,7 @@ def show_edit_service_form(table: ServiceTable, service_index: int, service: Ser
             with col1:
                 cost_range_low = st.number_input(
                     "Low End Cost ($) *",
-                    value=service.cost_range_low if service.cost_range_low else service.unit_cost * 0.8,
+                    value=float(service.cost_range_low if service.cost_range_low else float(service.unit_cost) * 0.8),
                     min_value=0.0,
                     step=1.0
                 )
@@ -478,7 +478,7 @@ def show_edit_service_form(table: ServiceTable, service_index: int, service: Ser
             with col2:
                 cost_range_high = st.number_input(
                     "High End Cost ($) *",
-                    value=service.cost_range_high if service.cost_range_high else service.unit_cost * 1.2,
+                    value=float(service.cost_range_high if service.cost_range_high else float(service.unit_cost) * 1.2),
                     min_value=0.0,
                     step=1.0
                 )
@@ -521,7 +521,7 @@ def show_edit_service_form(table: ServiceTable, service_index: int, service: Ser
 
             inflation_rate = st.number_input(
                 "Inflation Rate (%) *",
-                value=min(display_inflation, 20.0),  # Cap at 20% to avoid validation error
+                value=float(min(display_inflation, 20.0)),  # Cap at 20% to avoid validation error
                 min_value=0.0,
                 max_value=20.0,
                 step=0.1
@@ -532,7 +532,7 @@ def show_edit_service_form(table: ServiceTable, service_index: int, service: Ser
 
         if service.is_one_time_cost:
             st.write("**Current Type:** One-time Cost")
-            one_time_year = st.number_input("Year of Occurrence", value=service.one_time_cost_year, step=1)
+            one_time_year = st.number_input("Year of Occurrence", value=int(service.one_time_cost_year) if service.one_time_cost_year else 2025, step=1)
         elif service.occurrence_years:
             st.write("**Current Type:** Discrete Occurrences / Specific Years")
 
@@ -566,9 +566,9 @@ def show_edit_service_form(table: ServiceTable, service_index: int, service: Ser
             st.write("**Current Type:** Recurring")
             col1, col2 = st.columns(2)
             with col1:
-                start_year = st.number_input("Start Year", value=service.start_year, step=1)
+                start_year = st.number_input("Start Year", value=int(service.start_year) if service.start_year else 2025, step=1)
             with col2:
-                end_year = st.number_input("End Year", value=service.end_year, step=1)
+                end_year = st.number_input("End Year", value=int(service.end_year) if service.end_year else 2030, step=1)
         
         col1, col2 = st.columns(2)
         with col1:
