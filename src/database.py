@@ -112,7 +112,7 @@ class LCPDatabase:
                         name TEXT NOT NULL,
                         inflation_rate REAL NOT NULL,
                         unit_cost REAL NOT NULL,
-                        frequency_per_year INTEGER NOT NULL,
+                        frequency_per_year REAL NOT NULL,
                         start_year INTEGER,
                         end_year INTEGER,
                         occurrence_years TEXT,  -- JSON array
@@ -145,12 +145,77 @@ class LCPDatabase:
                 conn.commit()
                 logger.info("Database initialized successfully")
 
+                # Run database migrations
+                self._run_migrations()
+                
                 # Create default admin user if no users exist
                 self._create_default_admin_if_needed()
 
         except Exception as e:
             logger.error(f"Error initializing database: {e}")
             raise
+
+    def _run_migrations(self):
+        """Run database migrations to update schema."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Migration 1: Change frequency_per_year from INTEGER to REAL
+                # Check if the column is currently INTEGER
+                cursor.execute("PRAGMA table_info(services)")
+                columns = cursor.fetchall()
+                
+                frequency_col = None
+                for col in columns:
+                    if col[1] == 'frequency_per_year':
+                        frequency_col = col
+                        break
+                
+                if frequency_col and 'INTEGER' in str(frequency_col[2]).upper():
+                    logger.info("Migrating frequency_per_year column from INTEGER to REAL")
+                    
+                    # Create new table with correct schema
+                    cursor.execute('''
+                        CREATE TABLE services_new (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            table_id INTEGER NOT NULL,
+                            name TEXT NOT NULL,
+                            inflation_rate REAL NOT NULL,
+                            unit_cost REAL NOT NULL,
+                            frequency_per_year REAL NOT NULL,
+                            start_year INTEGER,
+                            end_year INTEGER,
+                            occurrence_years TEXT,
+                            cost_range_low REAL,
+                            cost_range_high REAL,
+                            use_cost_range BOOLEAN DEFAULT 0,
+                            is_one_time_cost BOOLEAN DEFAULT 0,
+                            one_time_cost_year INTEGER,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            FOREIGN KEY (table_id) REFERENCES service_tables (id) ON DELETE CASCADE
+                        )
+                    ''')
+                    
+                    # Copy data from old table to new table
+                    cursor.execute('''
+                        INSERT INTO services_new 
+                        SELECT * FROM services
+                    ''')
+                    
+                    # Drop old table and rename new table
+                    cursor.execute('DROP TABLE services')
+                    cursor.execute('ALTER TABLE services_new RENAME TO services')
+                    
+                    # Recreate index
+                    cursor.execute('CREATE INDEX IF NOT EXISTS idx_services_table_id ON services (table_id)')
+                    
+                    conn.commit()
+                    logger.info("Successfully migrated frequency_per_year column to REAL type")
+                    
+        except Exception as e:
+            logger.error(f"Error running migrations: {e}")
+            # Don't raise - migrations should be non-breaking
 
     def _create_default_admin_if_needed(self):
         """Create a default admin user if no users exist."""
