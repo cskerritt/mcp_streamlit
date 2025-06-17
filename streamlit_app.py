@@ -8,18 +8,10 @@ life care plan cost projections.
 """
 
 import streamlit as st
-import pandas as pd
-import plotly.graph_objects as go
-import plotly.express as px
 from datetime import datetime
-import json
-import io
-from typing import Optional, Dict, Any
 
 # Import core modules
-from src.models import LifeCarePlan, Evaluee, ProjectionSettings, ServiceTable, Service, LCPConfigModel
-from src.calculator import CostCalculator
-from src.exporters import ExcelExporter, WordExporter, PDFExporter
+from src.models import LifeCarePlan, Evaluee, ProjectionSettings, ServiceTable, Service
 from src.database import db
 from src.auth import auth
 

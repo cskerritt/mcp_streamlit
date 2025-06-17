@@ -6,6 +6,7 @@ import streamlit as st
 from datetime import datetime
 from src.models import LifeCarePlan, Evaluee, ProjectionSettings
 from src.database import db
+from src.auth import auth
 
 def show_create_plan_page():
     """Display the create/edit evaluee page."""
@@ -133,7 +134,9 @@ def show_create_plan_page():
                 # Auto-save to database if enabled
                 if st.session_state.get('auto_save', True):
                     try:
-                        db.save_life_care_plan(st.session_state.lcp_data)
+                        current_user = auth.get_current_user()
+                        user_id = current_user['id'] if current_user else None
+                        db.save_life_care_plan(st.session_state.lcp_data, user_id)
                         st.session_state.last_saved = datetime.now().strftime("%H:%M:%S")
                         st.info("💾 Auto-saved to database")
                     except Exception as e:

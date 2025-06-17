@@ -1,9 +1,10 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 from docx import Document
-from docx.shared import Inches
+from docx.shared import Inches, Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.enum.section import WD_ORIENT
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, Any
@@ -20,74 +21,105 @@ class ExcelExporter:
         self.lcp = calculator.lcp
     
     def export(self, file_path: str) -> None:
-        """Export the life care plan to Excel file."""
+        """Export the life care plan to Excel file with improved formatting."""
         df = self.calculator.build_cost_schedule()
         summary_stats = self.calculator.calculate_summary_statistics()
         category_costs = self.calculator.get_cost_by_category()
-        
+
         with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
-            # Main cost schedule
-            df.to_excel(writer, sheet_name='Cost Schedule', index=False)
-            
-            # Enhanced Summary statistics
+            # Main cost schedule with better column headers
+            df_formatted = df.copy()
+            df_formatted.columns = [
+                'Year',
+                'Evaluee Age',
+                'Total Annual Cost (Nominal)',
+                'Total Annual Cost (Present Value)' if 'Present Value' in df.columns else 'Total Annual Cost',
+                'Cumulative Cost (Nominal)',
+                'Cumulative Cost (Present Value)' if 'Cumulative PV' in df.columns else 'Cumulative Cost'
+            ][:len(df.columns)]
+
+            df_formatted.to_excel(writer, sheet_name='Annual Cost Schedule', index=False)
+
+            # Enhanced Summary statistics with clearer descriptions
             summary_data = [
+                ['Life Care Plan Summary', ''],
                 ['Evaluee Name', self.lcp.evaluee.name],
-                ['Current Age', f"{self.lcp.evaluee.current_age} years"],
-                ['Base Year', self.lcp.settings.base_year],
+                ['Current Age at Base Year', f"{self.lcp.evaluee.current_age} years old"],
+                ['Base Year (Analysis Start)', str(self.lcp.settings.base_year)],
                 ['Projection Period', f"{self.lcp.settings.projection_years} years ({summary_stats['projection_period']})"],
-                ['Total Nominal Cost', f"${summary_stats['total_nominal_cost']:,.2f}"],
+                ['Discount Rate Applied', f"{self.lcp.settings.discount_rate:.1%}" if self.lcp.evaluee.discount_calculations else "Not Applied"],
+                ['', ''],
+                ['Financial Summary', ''],
+                ['Total Lifetime Cost (Nominal)', f"${summary_stats['total_nominal_cost']:,.2f}"],
                 ['Average Annual Cost', f"${summary_stats['average_annual_cost']:,.2f}"],
             ]
             
             # Only include discount rate info if calculations are enabled
             if self.lcp.evaluee.discount_calculations:
                 summary_data.extend([
-                    ['Discount Rate', f"{summary_stats['discount_rate']:.2f}%"],
-                    ['Total Present Value', f"${summary_stats['total_present_value']:,.2f}"],
-                    ['Present Value Calculations', 'Enabled']
+                    ['Total Lifetime Cost (Present Value)', f"${summary_stats['total_present_value']:,.2f}"],
+                    ['Present Value Savings vs Nominal', f"${summary_stats['total_nominal_cost'] - summary_stats['total_present_value']:,.2f}"],
                 ])
-            else:
-                summary_data.append(['Present Value Calculations', 'Disabled'])
-            
+
             summary_data.extend([
-                ['Report Generated', datetime.now().strftime('%Y-%m-%d %H:%M:%S')],
-                ['Number of Service Categories', len(self.lcp.tables)],
-                ['Total Number of Services', sum(len(table.services) for table in self.lcp.tables.values())]
+                ['', ''],
+                ['Analysis Details', ''],
+                ['Service Categories Included', str(len(self.lcp.tables))],
+                ['Total Individual Services', str(sum(len(table.services) for table in self.lcp.tables.values()))],
+                ['Report Generated', datetime.now().strftime('%Y-%m-%d at %H:%M:%S')],
             ])
+
+            summary_df = pd.DataFrame(summary_data, columns=['Description', 'Value'])
+            summary_df.to_excel(writer, sheet_name='Executive Summary', index=False)
             
-            summary_df = pd.DataFrame(summary_data, columns=['Metric', 'Value'])
-            summary_df.to_excel(writer, sheet_name='Summary', index=False)
-            
-            # Enhanced Category breakdown
+            # Enhanced Category breakdown with clearer headers
             category_rows = []
             if self.lcp.evaluee.discount_calculations:
-                category_columns = ['Category', 'Total Nominal', 'Total Present Value', 'Service Count']
+                category_columns = [
+                    'Service Category',
+                    'Total Lifetime Cost (Nominal)',
+                    'Total Lifetime Cost (Present Value)',
+                    'Number of Services'
+                ]
                 for table_name, data in category_costs.items():
                     category_rows.append([
-                        table_name, 
+                        table_name,
                         f"${data['table_nominal_total']:,.2f}",
                         f"${data['table_present_value_total']:,.2f}",
                         len(data['services'])
                     ])
             else:
-                category_columns = ['Category', 'Total Nominal', 'Service Count']
+                category_columns = [
+                    'Service Category',
+                    'Total Lifetime Cost (Nominal)',
+                    'Number of Services'
+                ]
                 for table_name, data in category_costs.items():
                     category_rows.append([
-                        table_name, 
+                        table_name,
                         f"${data['table_nominal_total']:,.2f}",
                         len(data['services'])
                     ])
-            
+
             category_df = pd.DataFrame(category_rows, columns=category_columns)
-            category_df.to_excel(writer, sheet_name='Category Summary', index=False)
+            category_df.to_excel(writer, sheet_name='Cost by Category', index=False)
             
-            # Detailed Service Information
+            # Detailed Service Information with clearer headers
             service_rows = []
-            service_columns = ['Category', 'Service Name', 'Unit Cost', 'Frequency/Year', 'Inflation Rate %', 
-                              'Service Type', 'Start Year', 'End Year', 'Total Nominal']
-            
+            service_columns = [
+                'Service Category',
+                'Service Name',
+                'Unit Cost ($)',
+                'Frequency per Year',
+                'Annual Inflation Rate (%)',
+                'Service Type',
+                'Start Year',
+                'End Year',
+                'Total Lifetime Cost (Nominal)'
+            ]
+
             if self.lcp.evaluee.discount_calculations:
-                service_columns.append('Total Present Value')
+                service_columns.append('Total Lifetime Cost (Present Value)')
             
             for table_name, data in category_costs.items():
                 for service in data['services']:
@@ -108,8 +140,8 @@ class ExcelExporter:
                         table_name,
                         service['name'],
                         f"${service['unit_cost']:,.2f}",
-                        service['frequency_per_year'],
-                        f"{service['inflation_rate']:.2f}%",
+                        f"{service['frequency_per_year']}x per year",
+                        f"{service['inflation_rate']:.1f}%",
                         service_type,
                         start_year,
                         end_year,
@@ -133,38 +165,76 @@ class WordExporter:
         self.lcp = calculator.lcp
     
     def export(self, file_path: str, include_chart: bool = True) -> None:
-        """Export the life care plan to Word document."""
+        """Export the life care plan to Word document in landscape mode."""
         doc = Document()
-        
+
+        # Set document to landscape orientation
+        section = doc.sections[0]
+        section.orientation = WD_ORIENT.LANDSCAPE
+        # Swap width and height for landscape
+        new_width, new_height = section.page_height, section.page_width
+        section.page_width = new_width
+        section.page_height = new_height
+
+        # Adjust margins for better table fit
+        section.left_margin = Inches(0.5)
+        section.right_margin = Inches(0.5)
+        section.top_margin = Inches(0.75)
+        section.bottom_margin = Inches(0.75)
+
         # Title and header information
-        title = doc.add_heading(f"Life Care Plan Projection for {self.lcp.evaluee.name}", level=1)
+        title = doc.add_heading(f"Life Care Plan Economic Projection", level=1)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        # Subtitle with evaluee name
+        subtitle = doc.add_heading(f"Evaluee: {self.lcp.evaluee.name}", level=2)
+        subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
-        # Enhanced Document metadata
-        doc.add_paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        doc.add_paragraph(f"Evaluee age at {self.lcp.settings.base_year}: {self.lcp.evaluee.current_age} years")
-        doc.add_paragraph(f"Projection period: {self.lcp.settings.projection_years} years "
-                         f"({self.lcp.settings.base_year} to {self.lcp.settings.base_year + int(self.lcp.settings.projection_years) - 1})")
-        
+        # Enhanced Document metadata in a more professional format
+        metadata_para = doc.add_paragraph()
+        metadata_para.add_run("Report Generated: ").bold = True
+        metadata_para.add_run(f"{datetime.now().strftime('%B %d, %Y at %H:%M:%S')}\n")
+
+        metadata_para.add_run("Evaluee Age at Analysis Start: ").bold = True
+        metadata_para.add_run(f"{self.lcp.evaluee.current_age} years old (in {self.lcp.settings.base_year})\n")
+
+        metadata_para.add_run("Analysis Period: ").bold = True
+        end_year = self.lcp.settings.base_year + int(self.lcp.settings.projection_years) - 1
+        metadata_para.add_run(f"{self.lcp.settings.projection_years} years ({self.lcp.settings.base_year} to {end_year})\n")
+
         if self.lcp.evaluee.discount_calculations:
-            doc.add_paragraph(f"Discount rate: {self.lcp.settings.discount_rate:.2%}")
-            doc.add_paragraph("Present value calculations: Enabled")
+            metadata_para.add_run("Discount Rate Applied: ").bold = True
+            metadata_para.add_run(f"{self.lcp.settings.discount_rate:.1%} annually\n")
+            metadata_para.add_run("Present Value Calculations: ").bold = True
+            metadata_para.add_run("Enabled\n")
         else:
-            doc.add_paragraph("Present value calculations: Disabled")
-            
-        doc.add_paragraph(f"Total service categories: {len(self.lcp.tables)}")
-        doc.add_paragraph(f"Total services: {sum(len(table.services) for table in self.lcp.tables.values())}")
+            metadata_para.add_run("Present Value Calculations: ").bold = True
+            metadata_para.add_run("Not Applied\n")
+
+        metadata_para.add_run("Service Categories Analyzed: ").bold = True
+        metadata_para.add_run(f"{len(self.lcp.tables)}\n")
+
+        metadata_para.add_run("Total Individual Services: ").bold = True
+        metadata_para.add_run(f"{sum(len(table.services) for table in self.lcp.tables.values())}")
         
         # Summary statistics
         doc.add_heading("Executive Summary", level=2)
         summary_stats = self.calculator.calculate_summary_statistics()
-        
+
         summary_para = doc.add_paragraph()
-        summary_para.add_run(f"Total Nominal Cost: ${summary_stats['total_nominal_cost']:,.2f}\n").bold = True
-        summary_para.add_run(f"Average Annual Cost: ${summary_stats['average_annual_cost']:,.2f}\n").bold = True
-        
+        summary_para.add_run("Total Lifetime Medical Costs (Nominal): ").bold = True
+        summary_para.add_run(f"${summary_stats['total_nominal_cost']:,.2f}\n")
+
+        summary_para.add_run("Average Annual Medical Costs: ").bold = True
+        summary_para.add_run(f"${summary_stats['average_annual_cost']:,.2f}\n")
+
         if self.lcp.evaluee.discount_calculations:
-            summary_para.add_run(f"Total Present Value: ${summary_stats['total_present_value']:,.2f}\n").bold = True
+            summary_para.add_run("Total Lifetime Medical Costs (Present Value): ").bold = True
+            summary_para.add_run(f"${summary_stats['total_present_value']:,.2f}\n")
+
+            savings = summary_stats['total_nominal_cost'] - summary_stats['total_present_value']
+            summary_para.add_run("Present Value Savings vs Nominal: ").bold = True
+            summary_para.add_run(f"${savings:,.2f}\n")
         
         # Category breakdown
         doc.add_heading("Cost Breakdown by Category", level=2)
@@ -208,30 +278,54 @@ class WordExporter:
         
         # Detailed cost schedule table
         doc.add_page_break()
-        doc.add_heading("Detailed Cost Schedule", level=2)
-        
+        doc.add_heading("Annual Cost Schedule", level=2)
+
         df = self.calculator.build_cost_schedule()
-        
+
+        # Create table with improved headers and formatting for landscape
+        improved_headers = {
+            'Year': 'Year',
+            'Age': 'Evaluee Age',
+            'Total Nominal': 'Annual Cost (Nominal)',
+            'Present Value': 'Annual Cost (Present Value)',
+            'Cumulative Nominal': 'Cumulative Cost (Nominal)',
+            'Cumulative PV': 'Cumulative Cost (Present Value)'
+        }
+
         # Create table with proper formatting
         table = doc.add_table(rows=1, cols=len(df.columns))
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
         table.style = 'Table Grid'
-        
-        # Header row
+
+        # Set column widths for better fit in landscape
+        for i, col in enumerate(table.columns):
+            if i == 0:  # Year column
+                col.width = Inches(0.8)
+            elif i == 1:  # Age column
+                col.width = Inches(1.0)
+            else:  # Cost columns
+                col.width = Inches(1.8)
+
+        # Header row with improved names
         hdr_cells = table.rows[0].cells
         for idx, col in enumerate(df.columns):
-            hdr_cells[idx].text = str(col)
+            header_text = improved_headers.get(col, col)
+            hdr_cells[idx].text = header_text
             hdr_cells[idx].paragraphs[0].runs[0].bold = True
-        
-        # Data rows
+            # Center align headers
+            hdr_cells[idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        # Data rows with improved formatting
         for _, row in df.iterrows():
             row_cells = table.add_row().cells
             for idx, col in enumerate(df.columns):
                 value = row[col]
                 if isinstance(value, (int, float)) and col not in ['Year', 'Age']:
-                    row_cells[idx].text = f"${value:,.2f}"
+                    row_cells[idx].text = f"${value:,.0f}"  # Remove decimals for cleaner look
                 else:
-                    row_cells[idx].text = str(value)
+                    row_cells[idx].text = str(int(value) if isinstance(value, float) and value.is_integer() else value)
+                # Center align all data
+                row_cells[idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
         
         # Add chart if requested
         if include_chart:
@@ -284,16 +378,23 @@ class PDFExporter:
         self.lcp = calculator.lcp
     
     def export(self, file_path: str) -> None:
-        """Export the life care plan to PDF file."""
-        from reportlab.lib.pagesizes import letter, A4
+        """Export the life care plan to PDF file in landscape mode."""
+        from reportlab.lib.pagesizes import letter, A4, landscape
         from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.lib.units import inch
         from reportlab.lib import colors
         from reportlab.lib.enums import TA_CENTER
-        
-        # Create PDF document
-        doc = SimpleDocTemplate(file_path, pagesize=letter)
+
+        # Create PDF document in landscape mode
+        doc = SimpleDocTemplate(
+            file_path,
+            pagesize=landscape(letter),
+            leftMargin=0.5*inch,
+            rightMargin=0.5*inch,
+            topMargin=0.75*inch,
+            bottomMargin=0.75*inch
+        )
         story = []
         styles = getSampleStyleSheet()
         
@@ -301,28 +402,39 @@ class PDFExporter:
         title_style = ParagraphStyle(
             'CustomTitle',
             parent=styles['Heading1'],
-            fontSize=18,
+            fontSize=20,
+            alignment=TA_CENTER,
+            spaceAfter=20
+        )
+
+        subtitle_style = ParagraphStyle(
+            'CustomSubtitle',
+            parent=styles['Heading2'],
+            fontSize=14,
             alignment=TA_CENTER,
             spaceAfter=30
         )
-        
-        story.append(Paragraph(f"Life Care Plan Projection for {self.lcp.evaluee.name}", title_style))
+
+        story.append(Paragraph("Life Care Plan Economic Projection", title_style))
+        story.append(Paragraph(f"Evaluee: {self.lcp.evaluee.name}", subtitle_style))
         story.append(Spacer(1, 20))
         
         # Enhanced Metadata
-        story.append(Paragraph(f"<b>Generated:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", styles['Normal']))
-        story.append(Paragraph(f"<b>Evaluee age at {self.lcp.settings.base_year}:</b> {self.lcp.evaluee.current_age} years", styles['Normal']))
-        story.append(Paragraph(f"<b>Projection period:</b> {self.lcp.settings.projection_years} years "
-                             f"({self.lcp.settings.base_year} to {self.lcp.settings.base_year + int(self.lcp.settings.projection_years) - 1})", styles['Normal']))
-        
+        story.append(Paragraph(f"<b>Report Generated:</b> {datetime.now().strftime('%B %d, %Y at %H:%M:%S')}", styles['Normal']))
+        story.append(Paragraph(f"<b>Evaluee Age at Analysis Start:</b> {self.lcp.evaluee.current_age} years old (in {self.lcp.settings.base_year})", styles['Normal']))
+
+        end_year = self.lcp.settings.base_year + int(self.lcp.settings.projection_years) - 1
+        story.append(Paragraph(f"<b>Analysis Period:</b> {self.lcp.settings.projection_years} years "
+                             f"({self.lcp.settings.base_year} to {end_year})", styles['Normal']))
+
         if self.lcp.evaluee.discount_calculations:
-            story.append(Paragraph(f"<b>Discount rate:</b> {self.lcp.settings.discount_rate:.2%}", styles['Normal']))
-            story.append(Paragraph("<b>Present value calculations:</b> Enabled", styles['Normal']))
+            story.append(Paragraph(f"<b>Discount Rate Applied:</b> {self.lcp.settings.discount_rate:.1%} annually", styles['Normal']))
+            story.append(Paragraph("<b>Present Value Calculations:</b> Enabled", styles['Normal']))
         else:
-            story.append(Paragraph("<b>Present value calculations:</b> Disabled", styles['Normal']))
-        
-        story.append(Paragraph(f"<b>Total service categories:</b> {len(self.lcp.tables)}", styles['Normal']))
-        story.append(Paragraph(f"<b>Total services:</b> {sum(len(table.services) for table in self.lcp.tables.values())}", styles['Normal']))
+            story.append(Paragraph("<b>Present Value Calculations:</b> Not Applied", styles['Normal']))
+
+        story.append(Paragraph(f"<b>Service Categories Analyzed:</b> {len(self.lcp.tables)}", styles['Normal']))
+        story.append(Paragraph(f"<b>Total Individual Services:</b> {sum(len(table.services) for table in self.lcp.tables.values())}", styles['Normal']))
         story.append(Spacer(1, 20))
         
         # Summary statistics
@@ -330,13 +442,15 @@ class PDFExporter:
         summary_stats = self.calculator.calculate_summary_statistics()
         
         summary_data = [
-            ['Metric', 'Value'],
-            ['Total Nominal Cost', f"${summary_stats['total_nominal_cost']:,.2f}"],
-            ['Average Annual Cost', f"${summary_stats['average_annual_cost']:,.2f}"]
+            ['Financial Summary', 'Amount'],
+            ['Total Lifetime Medical Costs (Nominal)', f"${summary_stats['total_nominal_cost']:,.0f}"],
+            ['Average Annual Medical Costs', f"${summary_stats['average_annual_cost']:,.0f}"]
         ]
-        
+
         if self.lcp.evaluee.discount_calculations:
-            summary_data.append(['Total Present Value', f"${summary_stats['total_present_value']:,.2f}"])
+            summary_data.append(['Total Lifetime Medical Costs (Present Value)', f"${summary_stats['total_present_value']:,.0f}"])
+            savings = summary_stats['total_nominal_cost'] - summary_stats['total_present_value']
+            summary_data.append(['Present Value Savings vs Nominal', f"${savings:,.0f}"])
         
         summary_table = Table(summary_data)
         summary_table.setStyle(TableStyle([
@@ -354,17 +468,26 @@ class PDFExporter:
         story.append(Spacer(1, 20))
         
         # Category breakdown
-        story.append(Paragraph("Cost Breakdown by Category", styles['Heading2']))
+        story.append(Paragraph("Cost Breakdown by Service Category", styles['Heading2']))
         category_costs = self.calculator.get_cost_by_category()
-        
-        category_data = [['Category', 'Total Nominal', 'Total Present Value', 'Service Count']]
-        for table_name, data in category_costs.items():
-            category_data.append([
-                table_name,
-                f"${data['table_nominal_total']:,.2f}",
-                f"${data['table_present_value_total']:,.2f}",
-                str(len(data['services']))
-            ])
+
+        if self.lcp.evaluee.discount_calculations:
+            category_data = [['Service Category', 'Lifetime Cost (Nominal)', 'Lifetime Cost (Present Value)', 'Number of Services']]
+            for table_name, data in category_costs.items():
+                category_data.append([
+                    table_name,
+                    f"${data['table_nominal_total']:,.0f}",
+                    f"${data['table_present_value_total']:,.0f}",
+                    str(len(data['services']))
+                ])
+        else:
+            category_data = [['Service Category', 'Total Lifetime Cost (Nominal)', 'Number of Services']]
+            for table_name, data in category_costs.items():
+                category_data.append([
+                    table_name,
+                    f"${data['table_nominal_total']:,.0f}",
+                    str(len(data['services']))
+                ])
         
         category_table = Table(category_data)
         category_table.setStyle(TableStyle([
@@ -382,26 +505,26 @@ class PDFExporter:
         story.append(PageBreak())
         
         # Detailed cost schedule
-        story.append(Paragraph("Detailed Cost Schedule", styles['Heading2']))
+        story.append(Paragraph("Annual Cost Schedule", styles['Heading2']))
         df = self.calculator.build_cost_schedule()
-        
-        # Prepare table data (conditional columns based on PV calculations)
+
+        # Prepare table data with improved headers
         if "Present Value" in df.columns:
-            table_data = [['Year', 'Age', 'Total Nominal', 'Present Value']]
+            table_data = [['Year', 'Evaluee Age', 'Annual Cost (Nominal)', 'Annual Cost (Present Value)']]
             for _, row in df.iterrows():
                 table_data.append([
-                    str(row['Year']),
-                    str(row['Age']),
-                    f"${row['Total Nominal']:,.2f}",
-                    f"${row['Present Value']:,.2f}"
+                    str(int(row['Year'])),
+                    str(int(row['Age'])),
+                    f"${row['Total Nominal']:,.0f}",
+                    f"${row['Present Value']:,.0f}"
                 ])
         else:
-            table_data = [['Year', 'Age', 'Total Nominal']]
+            table_data = [['Year', 'Evaluee Age', 'Annual Medical Cost (Nominal)']]
             for _, row in df.iterrows():
                 table_data.append([
-                    str(row['Year']),
-                    str(row['Age']),
-                    f"${row['Total Nominal']:,.2f}"
+                    str(int(row['Year'])),
+                    str(int(row['Age'])),
+                    f"${row['Total Nominal']:,.0f}"
                 ])
         
         detail_table = Table(table_data)
