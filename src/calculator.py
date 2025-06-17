@@ -13,12 +13,19 @@ class CostCalculator:
     
     def calculate_service_cost(self, service: Service, year: int) -> Decimal:
         """Calculate the cost of a service for a specific year."""
-        years_from_base = year - self.lcp.settings.base_year
-        
-        if years_from_base < 0:
+        try:
+            years_from_base = year - self.lcp.settings.base_year
+            
+            if years_from_base < 0:
+                return Decimal('0')
+            
+            # Validate service data
+            if service.unit_cost is None or service.frequency_per_year is None:
+                return Decimal('0')
+            
+            base_cost = Decimal(str(service.unit_cost)) * Decimal(str(service.frequency_per_year))
+        except (ValueError, TypeError, AttributeError):
             return Decimal('0')
-        
-        base_cost = Decimal(str(service.unit_cost)) * Decimal(str(service.frequency_per_year))
         
         # Handle one-time costs
         if service.is_one_time_cost:

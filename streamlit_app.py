@@ -55,11 +55,18 @@ def create_sidebar():
     st.sidebar.markdown("---")
 
     # Auto-save toggle
-    st.session_state.auto_save = st.sidebar.checkbox(
+    auto_save_changed = st.sidebar.checkbox(
         "🔄 Auto-save to Database",
         value=st.session_state.auto_save,
-        help="Automatically save changes to the database"
+        help="Automatically save changes to the database",
+        key="auto_save_toggle"
     )
+    
+    if auto_save_changed != st.session_state.auto_save:
+        st.session_state.auto_save = auto_save_changed
+        if auto_save_changed and st.session_state.lcp_data:
+            auto_save_if_enabled()
+            st.sidebar.success("Auto-save enabled and data saved!")
 
     # Show current evaluee info if available
     if st.session_state.lcp_data:
@@ -106,7 +113,7 @@ def create_sidebar():
             )
 
             if selected_evaluee and selected_evaluee != "":
-                if st.sidebar.button(f"📂 Load {selected_evaluee}"):
+                if st.sidebar.button(f"📂 Load {selected_evaluee}", key=f"load_{selected_evaluee}"):
                     load_from_database(selected_evaluee)
         else:
             st.sidebar.info("No saved plans in database")

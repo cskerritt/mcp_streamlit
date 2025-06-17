@@ -36,7 +36,12 @@ def show_calculate_results_page():
             st.rerun()
         return
     
-    st.markdown(f"Calculating costs for: **{st.session_state.lcp_data.evaluee.name}**")
+    col1, col2 = st.columns([4, 1])
+    with col1:
+        st.markdown(f"Calculating costs for: **{st.session_state.lcp_data.evaluee.name}**")
+    with col2:
+        if st.button("🔄 Refresh Calculations", key="refresh_calc"):
+            st.rerun()
     
     try:
         # Create calculator
@@ -65,7 +70,18 @@ def show_calculate_results_page():
             
     except Exception as e:
         st.error(f"Error calculating costs: {str(e)}")
-        st.exception(e)
+        with st.expander("📋 Error Details", expanded=False):
+            st.exception(e)
+        
+        # Provide helpful suggestions
+        st.markdown("### Possible Solutions:")
+        st.markdown("- Check that all services have valid cost and frequency values")
+        st.markdown("- Ensure projection settings are properly configured")
+        st.markdown("- Try refreshing the page or reloading the evaluee data")
+        
+        if st.button("🏠 Return to Home", key="error_home"):
+            st.session_state.page = "🏠 Home"
+            st.rerun()
 
 def show_summary_tab(summary_stats, cost_schedule):
     """Show summary statistics."""
@@ -96,7 +112,15 @@ def show_summary_tab(summary_stats, cost_schedule):
                 help="Total cost discounted to present value"
             )
         else:
-            st.metric("Present Value", "Disabled", help="Present value calculations are disabled")
+            st.metric(
+                "Present Value", 
+                "Disabled", 
+                help="Present value calculations are disabled for this evaluee. Enable them in the evaluee settings."
+            )
+            st.warning("⚠️ Present value calculations are disabled. Enable them in the Create/Edit Evaluee page to see discounted costs.")
+            if st.button("🔧 Enable Present Value Calculations", key="enable_pv_calc"):
+                st.session_state.page = "👤 Create/Edit Evaluee"
+                st.rerun()
     
     with col4:
         st.metric(
