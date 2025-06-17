@@ -36,12 +36,39 @@ def show_calculate_results_page():
             st.rerun()
         return
     
-    col1, col2 = st.columns([4, 1])
-    with col1:
-        st.markdown(f"Calculating costs for: **{st.session_state.lcp_data.evaluee.name}**")
-    with col2:
-        if st.button("🔄 Refresh Calculations", key="refresh_calc"):
-            st.rerun()
+    # Scenario selector if scenarios exist
+    if hasattr(st.session_state.lcp_data, 'scenarios') and len(st.session_state.lcp_data.scenarios) > 1:
+        col1, col2, col3 = st.columns([2, 2, 1])
+        with col1:
+            st.markdown(f"Calculating costs for: **{st.session_state.lcp_data.evaluee.name}**")
+        
+        with col2:
+            scenario_names = list(st.session_state.lcp_data.scenarios.keys())
+            current_index = 0
+            if st.session_state.lcp_data.active_scenario in scenario_names:
+                current_index = scenario_names.index(st.session_state.lcp_data.active_scenario)
+            
+            selected_scenario = st.selectbox(
+                "Scenario",
+                scenario_names,
+                index=current_index,
+                help="Select scenario for calculations"
+            )
+            
+            if selected_scenario != st.session_state.lcp_data.active_scenario:
+                st.session_state.lcp_data.set_active_scenario(selected_scenario)
+                st.rerun()
+        
+        with col3:
+            if st.button("🔄 Refresh", key="refresh_calc"):
+                st.rerun()
+    else:
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            st.markdown(f"Calculating costs for: **{st.session_state.lcp_data.evaluee.name}**")
+        with col2:
+            if st.button("🔄 Refresh Calculations", key="refresh_calc"):
+                st.rerun()
     
     try:
         # Create calculator
@@ -86,6 +113,15 @@ def show_calculate_results_page():
 def show_summary_tab(summary_stats, cost_schedule):
     """Show summary statistics."""
     st.subheader("📊 Executive Summary")
+    
+    # Show current scenario info if scenarios are enabled
+    if hasattr(st.session_state.lcp_data, 'scenarios') and st.session_state.lcp_data.scenarios:
+        current_scenario = st.session_state.lcp_data.get_current_scenario()
+        if current_scenario:
+            scenario_emoji = "🏠" if current_scenario.is_baseline else "🎭"
+            st.info(f"{scenario_emoji} **Current Scenario:** {current_scenario.name}")
+            if current_scenario.description:
+                st.caption(f"*{current_scenario.description}*")
     
     # Key metrics in columns
     col1, col2, col3, col4 = st.columns(4)

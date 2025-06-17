@@ -115,14 +115,21 @@ class ProjectionSettings:
 
 
 @dataclass
-class LifeCarePlan:
-    """Main life care plan containing all data and settings."""
-    evaluee: Evaluee
-    settings: ProjectionSettings
+class Scenario:
+    """Represents a specific scenario for analysis within a life care plan."""
+    name: str
+    description: str = ""
+    settings: ProjectionSettings = None
     tables: Dict[str, ServiceTable] = field(default_factory=dict)
+    is_baseline: bool = False
+    created_at: Optional[datetime] = None
+    
+    def __post_init__(self):
+        if self.created_at is None:
+            self.created_at = datetime.now()
     
     def add_table(self, table: ServiceTable) -> None:
-        """Add a service table to the plan."""
+        """Add a service table to this scenario."""
         self.tables[table.name] = table
     
     def remove_table(self, table_name: str) -> bool:
@@ -143,6 +150,151 @@ class LifeCarePlan:
             for service in table.services:
                 services.append((table_name, service))
         return services
+    
+    def copy(self, new_name: str, new_description: str = "") -> 'Scenario':
+        """Create a copy of this scenario with a new name."""
+        import copy
+        new_scenario = Scenario(
+            name=new_name,
+            description=new_description,
+            settings=copy.deepcopy(self.settings),
+            tables=copy.deepcopy(self.tables),
+            is_baseline=False,
+            created_at=datetime.now()
+        )
+        return new_scenario
+
+
+@dataclass
+class LifeCarePlan:
+    """Main life care plan containing all data and settings."""
+    evaluee: Evaluee
+    settings: ProjectionSettings  # Default settings (used for baseline scenario)
+    _tables: Dict[str, ServiceTable] = field(default_factory=dict)  # Default tables (baseline scenario)
+    scenarios: Dict[str, Scenario] = field(default_factory=dict)
+    active_scenario: Optional[str] = None  # Name of currently active scenario
+    
+    def __post_init__(self):
+        """Initialize the baseline scenario if no scenarios exist."""
+        if not self.scenarios:
+            # Create baseline scenario from default tables and settings
+            baseline_scenario = Scenario(
+                name="Baseline",
+                description="Default baseline scenario",
+                settings=self.settings,
+                tables=self._tables,
+                is_baseline=True,
+                created_at=datetime.now()
+            )
+            self.scenarios["Baseline"] = baseline_scenario
+            self.active_scenario = "Baseline"
+    
+    def get_current_scenario(self) -> Scenario:
+        """Get the currently active scenario."""
+        if self.active_scenario and self.active_scenario in self.scenarios:
+            return self.scenarios[self.active_scenario]
+        else:
+            # Fallback to baseline if available
+            baseline = self.get_baseline_scenario()
+            if baseline:
+                self.active_scenario = baseline.name
+                return baseline
+            else:
+                # Create baseline if none exists
+                self.__post_init__()
+                return self.scenarios["Baseline"]
+    
+    def get_baseline_scenario(self) -> Optional[Scenario]:
+        """Get the baseline scenario."""
+        for scenario in self.scenarios.values():
+            if scenario.is_baseline:
+                return scenario
+        # If no baseline found, return the first scenario
+        if self.scenarios:
+            return list(self.scenarios.values())[0]
+        return None
+    
+    def add_scenario(self, scenario: Scenario) -> None:
+        """Add a new scenario to the plan."""
+        self.scenarios[scenario.name] = scenario
+    
+    def remove_scenario(self, scenario_name: str) -> bool:
+        """Remove a scenario by name. Cannot remove baseline scenario."""
+        if scenario_name in self.scenarios:
+            scenario = self.scenarios[scenario_name]
+            if scenario.is_baseline:
+                return False  # Cannot remove baseline
+            del self.scenarios[scenario_name]
+            # If we deleted the active scenario, switch to baseline
+            if self.active_scenario == scenario_name:
+                baseline = self.get_baseline_scenario()
+                self.active_scenario = baseline.name if baseline else None
+            return True
+        return False
+    
+    def copy_scenario(self, source_name: str, new_name: str, new_description: str = "") -> bool:
+        """Copy a scenario with a new name."""
+        if source_name in self.scenarios and new_name not in self.scenarios:
+            source_scenario = self.scenarios[source_name]
+            new_scenario = source_scenario.copy(new_name, new_description)
+            self.scenarios[new_name] = new_scenario
+            return True
+        return False
+    
+    def rename_scenario(self, old_name: str, new_name: str) -> bool:
+        """Rename a scenario. Cannot rename baseline scenario."""
+        if old_name in self.scenarios and new_name not in self.scenarios:
+            scenario = self.scenarios[old_name]
+            if scenario.is_baseline:
+                return False  # Cannot rename baseline
+            scenario.name = new_name
+            self.scenarios[new_name] = scenario
+            del self.scenarios[old_name]
+            # Update active scenario if it was the renamed one
+            if self.active_scenario == old_name:
+                self.active_scenario = new_name
+            return True
+        return False
+    
+    def set_active_scenario(self, scenario_name: str) -> bool:
+        """Set the active scenario."""
+        if scenario_name in self.scenarios:
+            self.active_scenario = scenario_name
+            return True
+        return False
+    
+    # Legacy methods that work with current scenario for backward compatibility
+    def add_table(self, table: ServiceTable) -> None:
+        """Add a service table to the current scenario."""
+        current_scenario = self.get_current_scenario()
+        current_scenario.add_table(table)
+    
+    def remove_table(self, table_name: str) -> bool:
+        """Remove a table by name from current scenario."""
+        current_scenario = self.get_current_scenario()
+        return current_scenario.remove_table(table_name)
+    
+    def get_table(self, table_name: str) -> Optional[ServiceTable]:
+        """Get a table by name from current scenario."""
+        current_scenario = self.get_current_scenario()
+        return current_scenario.get_table(table_name)
+    
+    def get_all_services(self) -> List[tuple[str, Service]]:
+        """Get all services with their table names from current scenario."""
+        current_scenario = self.get_current_scenario()
+        return current_scenario.get_all_services()
+    
+    @property
+    def tables(self) -> Dict[str, ServiceTable]:
+        """Get tables from current scenario (for backward compatibility)."""
+        current_scenario = self.get_current_scenario()
+        return current_scenario.tables
+    
+    @tables.setter
+    def tables(self, value: Dict[str, ServiceTable]):
+        """Set tables in current scenario (for backward compatibility)."""
+        current_scenario = self.get_current_scenario()
+        current_scenario.tables = value
 
 
 class LCPConfigModel(BaseModel):

@@ -82,7 +82,19 @@ def create_sidebar():
     if st.session_state.lcp_data:
         st.sidebar.success(f"**Current Plan:** {st.session_state.lcp_data.evaluee.name}")
         st.sidebar.info(f"Age: {st.session_state.lcp_data.evaluee.current_age}")
-        st.sidebar.info(f"Tables: {len(st.session_state.lcp_data.tables)}")
+        
+        # Show scenario information
+        if hasattr(st.session_state.lcp_data, 'scenarios') and st.session_state.lcp_data.scenarios:
+            current_scenario = st.session_state.lcp_data.get_current_scenario()
+            if current_scenario:
+                scenario_emoji = "🏠" if current_scenario.is_baseline else "🎭"
+                st.sidebar.info(f"{scenario_emoji} Scenario: {current_scenario.name}")
+                st.sidebar.info(f"📋 Tables: {len(current_scenario.tables)}")
+                st.sidebar.caption(f"Total Scenarios: {len(st.session_state.lcp_data.scenarios)}")
+            else:
+                st.sidebar.info(f"📋 Tables: {len(st.session_state.lcp_data.tables)}")
+        else:
+            st.sidebar.info(f"📋 Tables: {len(st.session_state.lcp_data.tables)}")
 
         # Show last saved time
         if st.session_state.last_saved:
@@ -134,6 +146,7 @@ def create_sidebar():
         "🏠 Home",
         "👤 Create/Edit Evaluee",
         "👥 Manage Evaluees",
+        "🎭 Scenario Management",
         "📋 Manage Service Tables",
         "🧮 Calculate & View Results",
         "📊 Export Reports",
@@ -398,6 +411,9 @@ def main():
     elif st.session_state.page == "👥 Manage Evaluees":
         from pages.manage_evaluees import show_manage_evaluees_page
         show_manage_evaluees_page()
+    elif st.session_state.page == "🎭 Scenario Management":
+        from pages.scenario_management import show_scenario_management_page
+        show_scenario_management_page()
     elif st.session_state.page == "📋 Manage Service Tables":
         from pages.manage_services import show_manage_services_page
         show_manage_services_page()

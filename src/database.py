@@ -104,6 +104,23 @@ class LCPDatabase:
                     )
                 ''')
                 
+                # Create scenarios table
+                cursor.execute('''
+                    CREATE TABLE IF NOT EXISTS scenarios (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        evaluee_id INTEGER NOT NULL,
+                        name TEXT NOT NULL,
+                        description TEXT DEFAULT '',
+                        is_baseline BOOLEAN NOT NULL DEFAULT 0,
+                        base_year INTEGER NOT NULL,
+                        projection_years REAL NOT NULL,
+                        discount_rate REAL NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (evaluee_id) REFERENCES evaluees (id) ON DELETE CASCADE,
+                        UNIQUE(evaluee_id, name)
+                    )
+                ''')
+                
                 # Create services table
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS services (
@@ -212,6 +229,26 @@ class LCPDatabase:
                     
                     conn.commit()
                     logger.info("Successfully migrated frequency_per_year column to REAL type")
+                
+                # Migration 2: Add scenario_id column to service_tables
+                try:
+                    cursor.execute("PRAGMA table_info(service_tables)")
+                    columns = cursor.fetchall()
+                    column_names = [col[1] for col in columns]
+                    
+                    if 'scenario_id' not in column_names:
+                        logger.info("Adding scenario_id column to service_tables")
+                        cursor.execute('ALTER TABLE service_tables ADD COLUMN scenario_id INTEGER')
+                        
+                        # Create index for the new column
+                        cursor.execute('CREATE INDEX IF NOT EXISTS idx_service_tables_scenario_id ON service_tables (scenario_id)')
+                        
+                        conn.commit()
+                        logger.info("Successfully added scenario_id column to service_tables")
+                        
+                except sqlite3.OperationalError as e:
+                    if "duplicate column name" not in str(e).lower():
+                        logger.warning(f"Migration warning: {e}")
                     
         except Exception as e:
             logger.error(f"Error running migrations: {e}")
@@ -249,7 +286,7 @@ class LCPDatabase:
             logger.error(f"Error creating default admin user: {e}")
     
     def save_life_care_plan(self, lcp: LifeCarePlan, user_id: Optional[int] = None) -> int:
-        """Save a complete life care plan to the database."""
+        """Save a complete life care plan with scenarios to the database."""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
@@ -267,9 +304,10 @@ class LCPDatabase:
                         WHERE id = ?
                     ''', (lcp.evaluee.current_age, lcp.evaluee.birth_year, lcp.evaluee.discount_calculations, user_id, evaluee_id))
                     
-                    # Delete existing projection settings and service tables (cascade will handle services)
+                    # Delete existing data (scenarios and their tables/services will cascade)
                     cursor.execute('DELETE FROM projection_settings WHERE evaluee_id = ?', (evaluee_id,))
-                    cursor.execute('DELETE FROM service_tables WHERE evaluee_id = ?', (evaluee_id,))
+                    cursor.execute('DELETE FROM scenarios WHERE evaluee_id = ?', (evaluee_id,))
+                    cursor.execute('DELETE FROM service_tables WHERE evaluee_id = ? AND scenario_id IS NULL', (evaluee_id,))
                 else:
                     # Create new evaluee
                     cursor.execute('''
@@ -278,47 +316,75 @@ class LCPDatabase:
                     ''', (lcp.evaluee.name, lcp.evaluee.current_age, lcp.evaluee.birth_year, lcp.evaluee.discount_calculations, user_id))
                     evaluee_id = cursor.lastrowid
                 
-                # Save projection settings
+                # Save baseline projection settings (for backward compatibility)
                 cursor.execute('''
                     INSERT INTO projection_settings (evaluee_id, base_year, projection_years, discount_rate)
                     VALUES (?, ?, ?, ?)
                 ''', (evaluee_id, lcp.settings.base_year, lcp.settings.projection_years, lcp.settings.discount_rate))
                 
-                # Save service tables and services
-                for table_name, table in lcp.tables.items():
-                    cursor.execute('''
-                        INSERT INTO service_tables (evaluee_id, name, default_inflation_rate)
-                        VALUES (?, ?, ?)
-                    ''', (evaluee_id, table_name, getattr(table, 'default_inflation_rate', 3.5)))
-                    table_id = cursor.lastrowid
-                    
-                    # Save services for this table
-                    for service in table.services:
-                        occurrence_years_json = json.dumps(service.occurrence_years) if service.occurrence_years else None
-                        
+                # Save scenarios if they exist
+                if hasattr(lcp, 'scenarios') and lcp.scenarios:
+                    for scenario_name, scenario in lcp.scenarios.items():
+                        # Save scenario
+                        scenario_settings = scenario.settings if scenario.settings else lcp.settings
                         cursor.execute('''
-                            INSERT INTO services (
-                                table_id, name, inflation_rate, unit_cost, frequency_per_year,
-                                start_year, end_year, occurrence_years, cost_range_low, cost_range_high,
-                                use_cost_range, is_one_time_cost, one_time_cost_year
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ''', (
-                            table_id, service.name, service.inflation_rate, service.unit_cost,
-                            service.frequency_per_year, service.start_year, service.end_year,
-                            occurrence_years_json, service.cost_range_low, service.cost_range_high,
-                            service.use_cost_range, service.is_one_time_cost, service.one_time_cost_year
-                        ))
+                            INSERT INTO scenarios (evaluee_id, name, description, is_baseline, base_year, projection_years, discount_rate)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                        ''', (evaluee_id, scenario.name, scenario.description, scenario.is_baseline,
+                              scenario_settings.base_year, scenario_settings.projection_years, scenario_settings.discount_rate))
+                        scenario_id = cursor.lastrowid
+                        
+                        # Save service tables and services for this scenario
+                        for table_name, table in scenario.tables.items():
+                            cursor.execute('''
+                                INSERT INTO service_tables (evaluee_id, scenario_id, name, default_inflation_rate)
+                                VALUES (?, ?, ?, ?)
+                            ''', (evaluee_id, scenario_id, table_name, getattr(table, 'default_inflation_rate', 3.5)))
+                            table_id = cursor.lastrowid
+                            
+                            # Save services for this table
+                            for service in table.services:
+                                self._save_service(cursor, table_id, service)
+                else:
+                    # Backward compatibility: save tables directly (no scenarios)
+                    for table_name, table in lcp.tables.items():
+                        cursor.execute('''
+                            INSERT INTO service_tables (evaluee_id, name, default_inflation_rate)
+                            VALUES (?, ?, ?)
+                        ''', (evaluee_id, table_name, getattr(table, 'default_inflation_rate', 3.5)))
+                        table_id = cursor.lastrowid
+                        
+                        # Save services for this table
+                        for service in table.services:
+                            self._save_service(cursor, table_id, service)
                 
                 conn.commit()
-                logger.info(f"Life care plan saved successfully for evaluee: {lcp.evaluee.name}")
+                logger.info(f"Successfully saved life care plan: {lcp.evaluee.name}")
                 return evaluee_id
                 
         except Exception as e:
             logger.error(f"Error saving life care plan: {e}")
             raise
     
+    def _save_service(self, cursor, table_id: int, service):
+        """Helper method to save a service to the database."""
+        occurrence_years_json = json.dumps(service.occurrence_years) if service.occurrence_years else None
+        
+        cursor.execute('''
+            INSERT INTO services (
+                table_id, name, inflation_rate, unit_cost, frequency_per_year,
+                start_year, end_year, occurrence_years, cost_range_low, cost_range_high,
+                use_cost_range, is_one_time_cost, one_time_cost_year
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            table_id, service.name, service.inflation_rate, service.unit_cost,
+            service.frequency_per_year, service.start_year, service.end_year,
+            occurrence_years_json, service.cost_range_low, service.cost_range_high,
+            service.use_cost_range, service.is_one_time_cost, service.one_time_cost_year
+        ))
+    
     def load_life_care_plan(self, evaluee_name: str) -> Optional[LifeCarePlan]:
-        """Load a life care plan from the database by evaluee name."""
+        """Load a life care plan with scenarios from the database by evaluee name."""
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
@@ -338,7 +404,7 @@ class LCPDatabase:
                     discount_calculations=bool(evaluee_row[4])
                 )
                 
-                # Get projection settings
+                # Get baseline projection settings
                 cursor.execute('SELECT * FROM projection_settings WHERE evaluee_id = ?', (evaluee_id,))
                 settings_row = cursor.fetchone()
                 
@@ -352,79 +418,125 @@ class LCPDatabase:
                     discount_rate=settings_row[4]
                 )
                 
-                # Get service tables
-                cursor.execute('SELECT * FROM service_tables WHERE evaluee_id = ?', (evaluee_id,))
-                table_rows = cursor.fetchall()
+                # Check if scenarios exist
+                cursor.execute('SELECT * FROM scenarios WHERE evaluee_id = ? ORDER BY is_baseline DESC, name', (evaluee_id,))
+                scenario_rows = cursor.fetchall()
                 
-                tables = {}
-                for table_row in table_rows:
-                    table_id = table_row[0]
-                    table_name = table_row[2]
-                    
-                    table = ServiceTable(name=table_name)
-                    table.default_inflation_rate = table_row[3]
-                    
-                    # Get services for this table
-                    cursor.execute('SELECT * FROM services WHERE table_id = ?', (table_id,))
-                    service_rows = cursor.fetchall()
-                    
-                    for service_row in service_rows:
-                        # Handle occurrence_years JSON parsing safely
-                        occurrence_years = None
-                        if service_row[9] and isinstance(service_row[9], str):
-                            try:
-                                occurrence_years = json.loads(service_row[9])
-                            except (json.JSONDecodeError, TypeError):
-                                occurrence_years = None
+                scenarios = {}
+                active_scenario = None
+                
+                if scenario_rows:
+                    # Load scenarios
+                    for scenario_row in scenario_rows:
+                        scenario_id = scenario_row[0]
+                        scenario_name = scenario_row[2]
+                        scenario_description = scenario_row[3]
+                        is_baseline = bool(scenario_row[4])
                         
-                        # Handle cost range values safely
-                        use_cost_range = bool(service_row[12])
-                        cost_range_low = service_row[10] if service_row[10] is not None else None
-                        cost_range_high = service_row[11] if service_row[11] is not None else None
-
-                        # If use_cost_range is True but values are None, disable cost range
-                        if use_cost_range and (cost_range_low is None or cost_range_high is None):
-                            use_cost_range = False
-                            cost_range_low = None
-                            cost_range_high = None
-
-                        # Handle inflation rate - ensure it's stored as decimal
-                        inflation_rate = float(service_row[3]) if service_row[3] is not None else 0.0
-                        # Convert percentage to decimal if needed (stored as percentage by mistake)
-                        if inflation_rate > 1.0:
-                            inflation_rate = inflation_rate / 100
-                        # Ensure inflation rate is within reasonable bounds
-                        inflation_rate = max(0.0, min(inflation_rate, 1.0))
-
-                        service = Service(
-                            name=service_row[2],
-                            inflation_rate=inflation_rate,
-                            unit_cost=service_row[4],
-                            frequency_per_year=service_row[5],
-                            start_year=service_row[6],
-                            end_year=service_row[7],
-                            occurrence_years=occurrence_years,
-                            cost_range_low=cost_range_low,
-                            cost_range_high=cost_range_high,
-                            use_cost_range=use_cost_range,
-                            is_one_time_cost=bool(service_row[13]),
-                            one_time_cost_year=service_row[14]
+                        scenario_settings = ProjectionSettings(
+                            base_year=scenario_row[5],
+                            projection_years=scenario_row[6],
+                            discount_rate=scenario_row[7]
                         )
                         
-                        table.add_service(service)
+                        # Load tables for this scenario
+                        scenario_tables = self._load_tables_for_scenario(cursor, evaluee_id, scenario_id)
+                        
+                        from src.models import Scenario
+                        scenario = Scenario(
+                            name=scenario_name,
+                            description=scenario_description,
+                            settings=scenario_settings,
+                            tables=scenario_tables,
+                            is_baseline=is_baseline,
+                            created_at=datetime.fromisoformat(scenario_row[8]) if scenario_row[8] else datetime.now()
+                        )
+                        
+                        scenarios[scenario_name] = scenario
+                        
+                        if is_baseline or active_scenario is None:
+                            active_scenario = scenario_name
                     
-                    tables[table_name] = table
+                    # Create LCP with scenarios
+                    lcp = LifeCarePlan(
+                        evaluee=evaluee,
+                        settings=settings,
+                        _tables={},  # Empty, data is in scenarios
+                        scenarios=scenarios,
+                        active_scenario=active_scenario
+                    )
+                else:
+                    # Backward compatibility: load tables directly (no scenarios)
+                    tables = self._load_tables_for_scenario(cursor, evaluee_id, None)
+                    
+                    lcp = LifeCarePlan(
+                        evaluee=evaluee,
+                        settings=settings,
+                        _tables=tables
+                    )
+                    # Initialize baseline scenario
+                    lcp.__post_init__()
                 
-                lcp = LifeCarePlan(evaluee=evaluee, settings=settings)
-                for table_name, table in tables.items():
-                    lcp.add_table(table)
-                
-                logger.info(f"Life care plan loaded successfully for evaluee: {evaluee_name}")
+                logger.info(f"Successfully loaded life care plan: {evaluee_name}")
                 return lcp
                 
         except Exception as e:
             logger.error(f"Error loading life care plan: {e}")
             return None
+    
+    def _load_tables_for_scenario(self, cursor, evaluee_id: int, scenario_id: Optional[int]) -> Dict[str, 'ServiceTable']:
+        """Load service tables for a specific scenario (or baseline if scenario_id is None)."""
+        tables = {}
+        
+        # Build WHERE clause based on whether we're loading for a scenario or baseline
+        if scenario_id is not None:
+            cursor.execute('SELECT * FROM service_tables WHERE evaluee_id = ? AND scenario_id = ?', (evaluee_id, scenario_id))
+        else:
+            cursor.execute('SELECT * FROM service_tables WHERE evaluee_id = ? AND (scenario_id IS NULL OR scenario_id = ?)', (evaluee_id, scenario_id))
+        
+        table_rows = cursor.fetchall()
+        
+        for table_row in table_rows:
+            table_id = table_row[0]
+            table_name = table_row[2]
+            
+            from src.models import ServiceTable
+            table = ServiceTable(name=table_name)
+            table.default_inflation_rate = table_row[3]
+            
+            # Get services for this table
+            cursor.execute('SELECT * FROM services WHERE table_id = ?', (table_id,))
+            service_rows = cursor.fetchall()
+            
+            for service_row in service_rows:
+                # Handle occurrence_years JSON parsing safely
+                occurrence_years = None
+                if service_row[8]:  # occurrence_years column (index 8)
+                    try:
+                        occurrence_years = json.loads(service_row[8])
+                    except json.JSONDecodeError:
+                        logger.warning(f"Invalid JSON in occurrence_years for service: {service_row[2]}")
+                
+                from src.models import Service
+                service = Service(
+                    name=service_row[2],
+                    inflation_rate=service_row[3],
+                    unit_cost=service_row[4],
+                    frequency_per_year=service_row[5],
+                    start_year=service_row[6],
+                    end_year=service_row[7],
+                    occurrence_years=occurrence_years,
+                    cost_range_low=service_row[9],
+                    cost_range_high=service_row[10],
+                    use_cost_range=bool(service_row[11]),
+                    is_one_time_cost=bool(service_row[12]),
+                    one_time_cost_year=service_row[13]
+                )
+                table.add_service(service)
+            
+            tables[table_name] = table
+        
+        return tables
     
     def list_evaluees(self, user_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """Get a list of all evaluees in the database."""
