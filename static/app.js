@@ -292,7 +292,7 @@ function createTableCard(tableName, services) {
             }
             
             // Build frequency display
-            const frequencyDisplay = service.is_one_time_cost ? 'One-time' : `${service.frequency_per_year}/year`;
+            const frequencyDisplay = service.is_one_time_cost ? 'One-time' : `${parseFloat(service.frequency_per_year).toFixed(1)}/year`;
             
             servicesHtml += `
                 <div class="service-item">
@@ -1241,7 +1241,7 @@ function displayGrowthRates(growthRates) {
                                     <span>${service.name}</span>
                                     <span class="badge bg-secondary">${service.inflation_rate.toFixed(2)}%</span>
                                 </div>
-                                <small class="text-muted">$${service.unit_cost} × ${service.frequency_per_year}/year</small>
+                                <small class="text-muted">$${service.unit_cost} × ${parseFloat(service.frequency_per_year).toFixed(1)}/year</small>
                             </div>
                         `).join('')}
                     </div>
