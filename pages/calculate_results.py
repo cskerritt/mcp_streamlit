@@ -344,13 +344,13 @@ def show_category_tab(category_costs):
     for category, costs in category_costs.items():
         row = {
             'Category': category,
-            'Nominal Total': costs['nominal_total'],
-            'Services Count': costs.get('service_count', 0)
+            'Nominal Total': costs['table_nominal_total'],
+            'Services Count': len(costs.get('services', []))
         }
-        
+
         if st.session_state.lcp_data.evaluee.discount_calculations:
-            row['Present Value Total'] = costs['present_value_total']
-        
+            row['Present Value Total'] = costs['table_present_value_total']
+
         category_data.append(row)
     
     category_df = pd.DataFrame(category_data)

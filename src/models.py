@@ -11,7 +11,7 @@ class Service:
     name: str
     inflation_rate: float
     unit_cost: float
-    frequency_per_year: int
+    frequency_per_year: float
     start_year: Optional[int] = None
     end_year: Optional[int] = None
     occurrence_years: Optional[List[int]] = None
@@ -52,9 +52,9 @@ class Service:
             if self.unit_cost < 0:
                 raise ValueError("Unit cost cannot be negative")
         
-        if self.frequency_per_year < 0:
-            raise ValueError("Frequency per year cannot be negative")
-        
+        if self.frequency_per_year <= 0:
+            raise ValueError("Frequency per year must be greater than zero")
+
         # One-time costs should have frequency of 1
         if self.is_one_time_cost and self.frequency_per_year != 1:
             self.frequency_per_year = 1

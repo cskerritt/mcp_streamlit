@@ -68,7 +68,7 @@ def show_tables_overview():
                         "Service": service.name,
                         "Type": service_type,
                         "Cost": cost_display,
-                        "Frequency/Year": service.frequency_per_year,
+                        "Frequency/Year": f"{service.frequency_per_year:.1f}",
                         "Inflation Rate": f"{service.inflation_rate:.1%}",
                         "Timing": timing
                     })
@@ -170,7 +170,7 @@ def show_service_management():
                     else:
                         st.write(f"**Cost:** ${service.unit_cost:,.2f}")
 
-                    st.write(f"**Frequency:** {service.frequency_per_year}/year")
+                    st.write(f"**Frequency:** {service.frequency_per_year:.1f}/year")
                     st.write(f"**Inflation:** {service.inflation_rate:.1%}")
 
                     if service.is_one_time_cost:
@@ -264,11 +264,21 @@ def show_add_service_form(table: ServiceTable):
         with col3:
             frequency_per_year = st.number_input(
                 "Frequency per Year *",
-                min_value=1,
-                value=1,
-                step=1,
-                help="How many times per year this service occurs"
+                min_value=0.1,
+                value=1.0,
+                step=0.1,
+                format="%.1f",
+                help="How many times per year this service occurs. Examples:\n• 1.0 = Once per year\n• 0.5 = Every 2 years\n• 2.0 = Twice per year\n• 1.5 = Every 1.5 years\n• 0.33 = Every 3 years"
             )
+
+            # Show frequency interpretation
+            if frequency_per_year < 1.0:
+                years_between = 1.0 / frequency_per_year
+                st.caption(f"💡 This means every {years_between:.1f} years")
+            elif frequency_per_year > 1.0:
+                st.caption(f"💡 This means {frequency_per_year:.1f} times per year")
+            else:
+                st.caption("💡 This means once per year")
 
         with col4:
             # Handle default inflation rate - check if it's already in percentage format
@@ -478,7 +488,23 @@ def show_edit_service_form(table: ServiceTable, service_index: int, service: Ser
         col3, col4 = st.columns(2)
 
         with col3:
-            frequency_per_year = st.number_input("Frequency per Year *", value=service.frequency_per_year, min_value=1, step=1)
+            frequency_per_year = st.number_input(
+                "Frequency per Year *",
+                value=float(service.frequency_per_year),
+                min_value=0.1,
+                step=0.1,
+                format="%.1f",
+                help="How many times per year this service occurs. Examples:\n• 1.0 = Once per year\n• 0.5 = Every 2 years\n• 2.0 = Twice per year\n• 1.5 = Every 1.5 years\n• 0.33 = Every 3 years"
+            )
+
+            # Show frequency interpretation
+            if frequency_per_year < 1.0:
+                years_between = 1.0 / frequency_per_year
+                st.caption(f"💡 This means every {years_between:.1f} years")
+            elif frequency_per_year > 1.0:
+                st.caption(f"💡 This means {frequency_per_year:.1f} times per year")
+            else:
+                st.caption("💡 This means once per year")
 
         with col4:
             # Handle inflation rate - check if it's already in percentage format

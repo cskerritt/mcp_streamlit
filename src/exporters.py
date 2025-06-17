@@ -140,7 +140,7 @@ class ExcelExporter:
                         table_name,
                         service['name'],
                         f"${service['unit_cost']:,.2f}",
-                        f"{service['frequency_per_year']}x per year",
+                        f"{service['frequency_per_year']:.1f}x per year",
                         f"{service['inflation_rate']:.1f}%",
                         service_type,
                         start_year,
@@ -267,7 +267,7 @@ class WordExporter:
                         years_info = f"Years: {start_yr}-{end_yr}"
                     
                     para.add_run(f"  • {service['name']}: ${service['unit_cost']:,.2f} "
-                               f"({service['frequency_per_year']}x/year, {service['inflation_rate']:.1f}% inflation, "
+                               f"({service['frequency_per_year']:.1f}x/year, {service['inflation_rate']:.1f}% inflation, "
                                f"{service_type}, {years_info})\n"
                                f"    Total Nominal: ${service['nominal_total']:,.2f}")
                     
