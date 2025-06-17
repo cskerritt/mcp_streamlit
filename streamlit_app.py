@@ -21,6 +21,7 @@ from src.models import LifeCarePlan, Evaluee, ProjectionSettings, ServiceTable, 
 from src.calculator import CostCalculator
 from src.exporters import ExcelExporter, WordExporter, PDFExporter
 from src.database import db
+from src.auth import auth
 
 # Configure Streamlit page
 st.set_page_config(
@@ -47,6 +48,19 @@ def initialize_session_state():
 def create_sidebar():
     """Create the sidebar navigation."""
     st.sidebar.title("🏥 Life Care Plan Generator")
+
+    # Show user info and logout button
+    current_user = auth.get_current_user()
+    if current_user:
+        st.sidebar.success(f"👤 **Welcome, {current_user.get('full_name', current_user['username'])}**")
+
+        col1, col2 = st.sidebar.columns([2, 1])
+        with col2:
+            if st.button("🚪 Logout", use_container_width=True):
+                auth.logout()
+                st.rerun()
+
+    st.sidebar.markdown("---")
 
     # Auto-save toggle
     st.session_state.auto_save = st.sidebar.checkbox(
@@ -88,7 +102,9 @@ def create_sidebar():
 
     # Load from database
     try:
-        evaluees = db.list_evaluees()
+        current_user = auth.get_current_user()
+        user_id = current_user['id'] if current_user else None
+        evaluees = db.list_evaluees(user_id)
         if evaluees:
             evaluee_names = [e['name'] for e in evaluees]
             selected_evaluee = st.sidebar.selectbox(
@@ -192,8 +208,10 @@ def show_home_page():
         # Database status
         st.markdown("### Database Status")
         try:
-            evaluees = db.list_evaluees()
-            st.info(f"**Saved Plans:** {len(evaluees)}")
+            current_user = auth.get_current_user()
+            user_id = current_user['id'] if current_user else None
+            evaluees = db.list_evaluees(user_id)
+            st.info(f"**Your Saved Plans:** {len(evaluees)}")
             if st.session_state.get('auto_save', True):
                 st.success("🔄 Auto-save: ON")
             else:
@@ -208,7 +226,9 @@ def save_to_database():
         return
 
     try:
-        db.save_life_care_plan(st.session_state.lcp_data)
+        current_user = auth.get_current_user()
+        user_id = current_user['id'] if current_user else None
+        db.save_life_care_plan(st.session_state.lcp_data, user_id)
         st.session_state.last_saved = datetime.now().strftime("%H:%M:%S")
         st.success(f"✅ Saved {st.session_state.lcp_data.evaluee.name} to database")
     except Exception as e:
@@ -218,7 +238,9 @@ def auto_save_if_enabled():
     """Auto-save to database if enabled."""
     if st.session_state.auto_save and st.session_state.lcp_data:
         try:
-            db.save_life_care_plan(st.session_state.lcp_data)
+            current_user = auth.get_current_user()
+            user_id = current_user['id'] if current_user else None
+            db.save_life_care_plan(st.session_state.lcp_data, user_id)
             st.session_state.last_saved = datetime.now().strftime("%H:%M:%S")
         except Exception as e:
             st.error(f"Auto-save failed: {str(e)}")
@@ -300,17 +322,26 @@ def load_sample_data():
 
 def main():
     """Main application function."""
+    # Check authentication first
+    if not auth.is_authenticated():
+        auth.show_login_page()
+        return
+
+    # Validate session
+    if not auth.validate_session():
+        return
+
     initialize_session_state()
-    
+
     # Create sidebar and get selected page
     if 'page' not in st.session_state:
         st.session_state.page = "🏠 Home"
-    
+
     selected_page = create_sidebar()
     if selected_page != st.session_state.page:
         st.session_state.page = selected_page
         st.rerun()
-    
+
     # Display selected page
     if st.session_state.page == "🏠 Home":
         show_home_page()
