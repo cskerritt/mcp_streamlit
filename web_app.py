@@ -282,7 +282,7 @@ async def edit_service(
     service_index: int = Form(...),
     service_name: str = Form(...),
     unit_cost: float = Form(...),
-    frequency_per_year: int = Form(...),
+    frequency_per_year: float = Form(...),
     inflation_rate: float = Form(...),
     service_type: str = Form(...),  # "recurring" or "discrete"
     start_year: Optional[int] = Form(None),
