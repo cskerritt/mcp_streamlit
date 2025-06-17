@@ -1512,7 +1512,7 @@ function updateSettingsSection() {
 
 function saveApplicationSettings() {
     appSettings.defaultBaseYear = parseInt(document.getElementById('default-base-year').value);
-    appSettings.defaultProjectionYears = parseInt(document.getElementById('default-projection-years').value);
+    appSettings.defaultProjectionYears = parseFloat(document.getElementById('default-projection-years').value);
     appSettings.defaultDiscountRate = parseFloat(document.getElementById('default-discount-rate').value);
     appSettings.autoCalculate = document.getElementById('auto-calculate').checked;
     appSettings.showWelcome = document.getElementById('show-welcome').checked;

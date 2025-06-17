@@ -287,7 +287,7 @@
                                             </div>
                                             <div class="mb-3">
                                                 <label for="base_year" class="form-label">Base Year</label>
-                                                <input type="number" class="form-control" id="base_year" value="2025">
+                                                <input type="number" class="form-control" id="base_year" value="2025" step="1" min="2020" max="2050">
                                             </div>
                                         </div>
                                         <div class="col-md-6">
@@ -435,7 +435,7 @@
                                         <div class="card-body">
                                             <div class="mb-3">
                                                 <label class="form-label">Default Base Year</label>
-                                                <input type="number" class="form-control" id="default-base-year" value="2025">
+                                                <input type="number" class="form-control" id="default-base-year" value="2025" step="1" min="2020" max="2050">
                                             </div>
                                             <div class="mb-3">
                                                 <label class="form-label">Default Projection Years</label>
@@ -657,7 +657,7 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <form id="serviceForm">
+                    <form id="serviceForm" onsubmit="return false;">
                         <input type="hidden" id="service_table_name" name="table_name">
                         <div class="row">
                             <div class="col-md-6">
@@ -706,7 +706,7 @@
                                             </label>
                                         </div>
                                     </div>
-                                    <input type="number" class="form-control" id="frequency_per_year" name="frequency_per_year" min="0.1" step="0.1" value="1.0" placeholder="e.g., 1.0, 0.5, 1.5" required>
+                                    <input type="number" class="form-control" id="frequency_per_year" name="frequency_per_year" min="0.1" step="0.1" value="1.0" placeholder="e.g., 1.0, 0.5, 1.5" pattern="[0-9]+(\.[0-9]+)?" required>
                                     <div class="form-text">Examples: 1.0 = once per year, 0.5 = every 2 years, 1.5 = every 1.5 years</div>
                                 </div>
                             </div>
@@ -775,14 +775,14 @@
                                 <div class="col-md-6">
                                     <div class="mb-3">
                                         <label for="start_year" class="form-label">Start Year <small class="text-muted">(auto-calculated)</small></label>
-                                        <input type="number" class="form-control" id="start_year" name="start_year" onchange="updateDurationFromYears()">
+                                        <input type="number" class="form-control" id="start_year" name="start_year" step="1" min="2020" max="2100" onchange="updateDurationFromYears()">
                                         <div class="form-text">You can manually adjust this year if needed</div>
                                     </div>
                                 </div>
                                 <div class="col-md-6">
                                     <div class="mb-3">
                                         <label for="end_year" class="form-label">End Year <small class="text-muted">(auto-calculated)</small></label>
-                                        <input type="number" class="form-control" id="end_year" name="end_year" onchange="updateDurationFromYears()">
+                                        <input type="number" class="form-control" id="end_year" name="end_year" step="1" min="2020" max="2100" onchange="updateDurationFromYears()">
                                         <div class="form-text">You can manually adjust this year if needed</div>
                                     </div>
                                 </div>
@@ -794,11 +794,11 @@
                             <div class="row mb-3">
                                 <div class="col-md-6">
                                     <label for="discrete_start_year" class="form-label">Start Year</label>
-                                    <input type="number" class="form-control" id="discrete_start_year" onchange="updateDiscreteYearOptions()">
+                                    <input type="number" class="form-control" id="discrete_start_year" step="1" min="2020" max="2100" onchange="updateDiscreteYearOptions()">
                                 </div>
                                 <div class="col-md-6">
                                     <label for="discrete_end_year" class="form-label">End Year</label>
-                                    <input type="number" class="form-control" id="discrete_end_year" onchange="updateDiscreteYearOptions()">
+                                    <input type="number" class="form-control" id="discrete_end_year" step="1" min="2020" max="2100" onchange="updateDiscreteYearOptions()">
                                 </div>
                             </div>
                             <div class="mb-3">
@@ -814,7 +814,7 @@
                         <div id="one-time-fields" style="display: none;">
                             <div class="mb-3">
                                 <label for="one_time_cost_year" class="form-label">One-time Cost Year *</label>
-                                <input type="number" class="form-control" id="one_time_cost_year" name="one_time_cost_year">
+                                <input type="number" class="form-control" id="one_time_cost_year" name="one_time_cost_year" step="1" min="2020" max="2100">
                                 <div class="form-text">The year when this one-time cost will occur (cost will be grown with inflation to this year)</div>
                             </div>
                         </div>
