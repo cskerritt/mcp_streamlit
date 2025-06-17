@@ -216,19 +216,41 @@ class LCPDatabase:
                     service_rows = cursor.fetchall()
                     
                     for service_row in service_rows:
-                        occurrence_years = json.loads(service_row[9]) if service_row[9] else None
+                        # Handle occurrence_years JSON parsing safely
+                        occurrence_years = None
+                        if service_row[9] and isinstance(service_row[9], str):
+                            try:
+                                occurrence_years = json.loads(service_row[9])
+                            except (json.JSONDecodeError, TypeError):
+                                occurrence_years = None
                         
+                        # Handle cost range values safely
+                        use_cost_range = bool(service_row[12])
+                        cost_range_low = service_row[10] if service_row[10] is not None else None
+                        cost_range_high = service_row[11] if service_row[11] is not None else None
+
+                        # If use_cost_range is True but values are None, disable cost range
+                        if use_cost_range and (cost_range_low is None or cost_range_high is None):
+                            use_cost_range = False
+                            cost_range_low = None
+                            cost_range_high = None
+
+                        # Handle inflation rate - ensure it's stored as decimal
+                        inflation_rate = service_row[3]
+                        if inflation_rate > 1.0:  # Likely stored as percentage, convert to decimal
+                            inflation_rate = inflation_rate / 100
+
                         service = Service(
                             name=service_row[2],
-                            inflation_rate=service_row[3],
+                            inflation_rate=inflation_rate,
                             unit_cost=service_row[4],
                             frequency_per_year=service_row[5],
                             start_year=service_row[6],
                             end_year=service_row[7],
                             occurrence_years=occurrence_years,
-                            cost_range_low=service_row[10],
-                            cost_range_high=service_row[11],
-                            use_cost_range=bool(service_row[12]),
+                            cost_range_low=cost_range_low,
+                            cost_range_high=cost_range_high,
+                            use_cost_range=use_cost_range,
                             is_one_time_cost=bool(service_row[13]),
                             one_time_cost_year=service_row[14]
                         )

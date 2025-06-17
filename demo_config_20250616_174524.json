@@ -1,0 +1,121 @@
+{
+  "evaluee_name": "Demo Patient",
+  "current_age": 42,
+  "base_year": 2025,
+  "projection_years": 25,
+  "discount_rate": 0.035,
+  "tables": {
+    "Physician Evaluation": [
+      {
+        "name": "Initial Comprehensive Evaluation",
+        "inflation_rate": 0.027,
+        "unit_cost": 750.0,
+        "frequency_per_year": 1,
+        "start_year": 2025,
+        "end_year": 2025
+      },
+      {
+        "name": "Quarterly Follow-up Visits",
+        "inflation_rate": 0.027,
+        "unit_cost": 350.0,
+        "frequency_per_year": 4,
+        "start_year": 2026,
+        "end_year": 2049
+      },
+      {
+        "name": "Annual Comprehensive Review",
+        "inflation_rate": 0.027,
+        "unit_cost": 500.0,
+        "frequency_per_year": 1,
+        "start_year": 2026,
+        "end_year": 2049
+      }
+    ],
+    "Medications": [
+      {
+        "name": "Primary Medication",
+        "inflation_rate": 0.055,
+        "unit_cost": 450.0,
+        "frequency_per_year": 12,
+        "start_year": 2025,
+        "end_year": 2049
+      },
+      {
+        "name": "Supplemental Medication",
+        "inflation_rate": 0.045,
+        "unit_cost": 125.0,
+        "frequency_per_year": 12,
+        "start_year": 2025,
+        "end_year": 2049
+      }
+    ],
+    "Therapy Services": [
+      {
+        "name": "Physical Therapy",
+        "inflation_rate": 0.032,
+        "unit_cost": 120.0,
+        "frequency_per_year": 24,
+        "start_year": 2025,
+        "end_year": 2049
+      },
+      {
+        "name": "Occupational Therapy",
+        "inflation_rate": 0.032,
+        "unit_cost": 115.0,
+        "frequency_per_year": 12,
+        "start_year": 2025,
+        "end_year": 2035
+      }
+    ],
+    "Medical Equipment": [
+      {
+        "name": "Wheelchair Replacement",
+        "inflation_rate": 0.028,
+        "unit_cost": 3500.0,
+        "frequency_per_year": 1,
+        "occurrence_years": [
+          2025,
+          2030,
+          2035,
+          2040,
+          2045
+        ]
+      },
+      {
+        "name": "Home Modifications",
+        "inflation_rate": 0.025,
+        "unit_cost": 15000.0,
+        "frequency_per_year": 1,
+        "is_one_time_cost": true,
+        "one_time_cost_year": 2026
+      },
+      {
+        "name": "Assistive Technology Updates",
+        "inflation_rate": 0.035,
+        "unit_cost": 1500.0,
+        "frequency_per_year": 1,
+        "occurrence_years": [
+          2025,
+          2027,
+          2031,
+          2034,
+          2038,
+          2042,
+          2046
+        ]
+      }
+    ],
+    "Surgical Procedures": [
+      {
+        "name": "Corrective Surgery",
+        "inflation_rate": 0.048,
+        "unit_cost": 85000.0,
+        "frequency_per_year": 1,
+        "occurrence_years": [
+          2028,
+          2040
+        ]
+      }
+    ]
+  }
+}
