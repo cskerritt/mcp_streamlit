@@ -264,11 +264,11 @@ def show_add_service_form(table: ServiceTable):
         with col3:
             frequency_per_year = st.number_input(
                 "Frequency per Year *",
-                min_value=0.5,
+                min_value=0.1,
                 value=1.0,
-                step=0.5,
-                format="%.1f",
-                help="How many times per year this service occurs. Examples:\n• 1.0 = Once per year\n• 0.5 = Every 2 years\n• 1.5 = Every 1.5 years\n• 2.0 = Twice per year\n• 2.5 = 2.5 times per year"
+                step=0.1,
+                format="%.2f",
+                help="How many times per year this service occurs. Examples:\n• 1.0 = Once per year\n• 0.5 = Every 2 years\n• 1.5 = Every 1.5 years\n• 0.33 = Every 3 years\n• 0.25 = Every 4 years"
             )
 
             # Show frequency interpretation
@@ -497,10 +497,10 @@ def show_edit_service_form(table: ServiceTable, service_index: int, service: Ser
             frequency_per_year = st.number_input(
                 "Frequency per Year *",
                 value=float(service.frequency_per_year),
-                min_value=0.5,
-                step=0.5,
-                format="%.1f",
-                help="How many times per year this service occurs. Examples:\n• 1.0 = Once per year\n• 0.5 = Every 2 years\n• 1.5 = Every 1.5 years\n• 2.0 = Twice per year\n• 2.5 = 2.5 times per year"
+                min_value=0.1,
+                step=0.1,
+                format="%.2f",
+                help="How many times per year this service occurs. Examples:\n• 1.0 = Once per year\n• 0.5 = Every 2 years\n• 1.5 = Every 1.5 years\n• 0.33 = Every 3 years\n• 0.25 = Every 4 years"
             )
 
             # Show frequency interpretation
