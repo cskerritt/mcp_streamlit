@@ -183,12 +183,12 @@ def show_manage_evaluees_page():
                                     db.delete_evaluee(evaluee['name'])
                                     
                                     # Clear from session if it's the current evaluee
-                                    if (st.session_state.lcp_data and 
+                                    if (st.session_state.get('lcp_data') and 
                                         st.session_state.lcp_data.evaluee.name == evaluee['name']):
-                                        st.session_state.lcp_data = None
-                                        st.session_state.current_table = None
-                                        st.session_state.show_calculations = False
-                                        st.session_state.last_saved = None
+                                        keys_to_clear = ['lcp_data', 'current_table', 'show_calculations', 'last_saved']
+                                        for key in keys_to_clear:
+                                            if key in st.session_state:
+                                                st.session_state[key] = None
                                     
                                     st.success(f"✅ Deleted {evaluee['name']}")
                                     st.session_state[confirm_key] = False
@@ -237,11 +237,11 @@ def show_manage_evaluees_page():
                         for evaluee in evaluees:
                             db.delete_evaluee(evaluee['name'])
                         
-                        # Clear session state
-                        st.session_state.lcp_data = None
-                        st.session_state.current_table = None
-                        st.session_state.show_calculations = False
-                        st.session_state.last_saved = None
+                        # Clear session state safely
+                        keys_to_clear = ['lcp_data', 'current_table', 'show_calculations', 'last_saved']
+                        for key in keys_to_clear:
+                            if key in st.session_state:
+                                st.session_state[key] = None
                         st.session_state.show_bulk_delete_confirm = False
                         
                         st.success("✅ All evaluees deleted successfully")

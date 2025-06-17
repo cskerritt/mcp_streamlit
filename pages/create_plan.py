@@ -102,8 +102,21 @@ def show_create_plan_page():
         submitted = st.form_submit_button("💾 Save Evaluee Information", use_container_width=True)
         
         if submitted:
+            # Validate inputs
             if not name.strip():
                 st.error("Please enter the evaluee's name.")
+                return
+            
+            if age <= 0 or age > 120:
+                st.error("Please enter a valid age between 0.1 and 120 years.")
+                return
+            
+            if projection_years <= 0 or projection_years > 100:
+                st.error("Please enter a valid projection period between 1 and 100 years.")
+                return
+            
+            if discount_rate < 0 or discount_rate > 0.20:
+                st.error("Please enter a valid discount rate between 0% and 20%.")
                 return
             
             try:

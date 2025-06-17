@@ -324,9 +324,12 @@ class LCPDatabase:
                             cost_range_high = None
 
                         # Handle inflation rate - ensure it's stored as decimal
-                        inflation_rate = service_row[3]
-                        if inflation_rate > 1.0:  # Likely stored as percentage, convert to decimal
+                        inflation_rate = float(service_row[3]) if service_row[3] is not None else 0.0
+                        # Convert percentage to decimal if needed (stored as percentage by mistake)
+                        if inflation_rate > 1.0:
                             inflation_rate = inflation_rate / 100
+                        # Ensure inflation rate is within reasonable bounds
+                        inflation_rate = max(0.0, min(inflation_rate, 1.0))
 
                         service = Service(
                             name=service_row[2],
@@ -367,25 +370,25 @@ class LCPDatabase:
                 # Build query with optional user filter
                 if user_id is not None:
                     cursor.execute('''
-                        SELECT e.name, e.current_age, e.created_at, e.updated_at,
+                        SELECT e.name, e.current_age, e.birth_year, e.created_at, e.updated_at,
                                COUNT(st.id) as table_count,
                                COUNT(s.id) as service_count
                         FROM evaluees e
                         LEFT JOIN service_tables st ON e.id = st.evaluee_id
                         LEFT JOIN services s ON st.id = s.table_id
                         WHERE e.user_id = ? OR e.user_id IS NULL
-                        GROUP BY e.id, e.name, e.current_age, e.created_at, e.updated_at
+                        GROUP BY e.id, e.name, e.current_age, e.birth_year, e.created_at, e.updated_at
                         ORDER BY e.updated_at DESC
                     ''', (user_id,))
                 else:
                     cursor.execute('''
-                        SELECT e.name, e.current_age, e.created_at, e.updated_at,
+                        SELECT e.name, e.current_age, e.birth_year, e.created_at, e.updated_at,
                                COUNT(st.id) as table_count,
                                COUNT(s.id) as service_count
                         FROM evaluees e
                         LEFT JOIN service_tables st ON e.id = st.evaluee_id
                         LEFT JOIN services s ON st.id = s.table_id
-                        GROUP BY e.id, e.name, e.current_age, e.created_at, e.updated_at
+                        GROUP BY e.id, e.name, e.current_age, e.birth_year, e.created_at, e.updated_at
                         ORDER BY e.updated_at DESC
                     ''')
                 
@@ -396,10 +399,11 @@ class LCPDatabase:
                     evaluees.append({
                         'name': row[0],
                         'current_age': row[1],
-                        'created_at': row[2],
-                        'updated_at': row[3],
-                        'table_count': row[4],
-                        'service_count': row[5]
+                        'birth_year': row[2],
+                        'created_at': row[3],
+                        'updated_at': row[4],
+                        'table_count': row[5],
+                        'service_count': row[6]
                     })
                 
                 return evaluees

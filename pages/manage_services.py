@@ -282,10 +282,16 @@ def show_add_service_form(table: ServiceTable):
 
         with col4:
             # Handle default inflation rate - check if it's already in percentage format
+            # Handle inflation rate conversion safely
             default_inflation = getattr(table, 'default_inflation_rate', 0.035)
-            if default_inflation <= 1.0:  # Likely stored as decimal (0.035 = 3.5%)
-                default_inflation = default_inflation * 100
-            # If it's > 1.0, assume it's already in percentage format
+            try:
+                default_inflation = float(default_inflation)
+                if default_inflation <= 1.0:  # Likely stored as decimal (0.035 = 3.5%)
+                    default_inflation = default_inflation * 100
+                # Ensure it's within reasonable bounds
+                default_inflation = max(0.0, min(default_inflation, 20.0))
+            except (ValueError, TypeError):
+                default_inflation = 3.5  # Fallback to 3.5%
 
             inflation_rate = st.number_input(
                 "Inflation Rate (%) *",

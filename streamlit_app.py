@@ -37,6 +37,16 @@ def initialize_session_state():
     if 'last_saved' not in st.session_state:
         st.session_state.last_saved = None
 
+def clear_session_state():
+    """Clear all session state variables safely."""
+    keys_to_clear = [
+        'lcp_data', 'current_table', 'show_calculations', 'last_saved',
+        'show_bulk_delete_confirm', 'navigate_to'
+    ]
+    for key in keys_to_clear:
+        if key in st.session_state:
+            del st.session_state[key]
+
 def create_sidebar():
     """Create the sidebar navigation."""
     st.sidebar.title("🏥 Life Care Plan Generator")
@@ -86,10 +96,7 @@ def create_sidebar():
 
         with col2:
             if st.button("🗑️ Clear", help="Clear current plan from memory"):
-                st.session_state.lcp_data = None
-                st.session_state.current_table = None
-                st.session_state.show_calculations = False
-                st.session_state.last_saved = None
+                clear_session_state()
                 st.rerun()
     else:
         st.sidebar.warning("No life care plan loaded")
@@ -263,14 +270,21 @@ def save_to_database():
 
 def auto_save_if_enabled():
     """Auto-save to database if enabled."""
-    if st.session_state.auto_save and st.session_state.lcp_data:
-        try:
-            current_user = auth.get_current_user()
-            user_id = current_user['id'] if current_user else None
-            db.save_life_care_plan(st.session_state.lcp_data, user_id)
-            st.session_state.last_saved = datetime.now().strftime("%H:%M:%S")
-        except Exception as e:
-            st.error(f"Auto-save failed: {str(e)}")
+    if not st.session_state.get('auto_save', False) or not st.session_state.get('lcp_data'):
+        return
+    
+    try:
+        current_user = auth.get_current_user()
+        if not current_user:
+            return  # Can't save without user
+        
+        user_id = current_user['id']
+        db.save_life_care_plan(st.session_state.lcp_data, user_id)
+        st.session_state.last_saved = datetime.now().strftime("%H:%M:%S")
+    except Exception as e:
+        # Don't show error for auto-save, just log it
+        import logging
+        logging.error(f"Auto-save failed: {str(e)}")
 
 def load_from_database(evaluee_name):
     """Load a life care plan from database."""
