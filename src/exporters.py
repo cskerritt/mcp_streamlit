@@ -217,6 +217,10 @@ class WordExporter:
         metadata_para.add_run("Total Individual Services: ").bold = True
         metadata_para.add_run(f"{sum(len(table.services) for table in self.lcp.tables.values())}")
         
+        # Add spacing after metadata
+        doc.add_paragraph()
+        doc.add_paragraph()
+        
         # Summary statistics
         doc.add_heading("Executive Summary", level=2)
         summary_stats = self.calculator.calculate_summary_statistics()
@@ -235,6 +239,10 @@ class WordExporter:
             savings = summary_stats['total_nominal_cost'] - summary_stats['total_present_value']
             summary_para.add_run("Present Value Savings vs Nominal: ").bold = True
             summary_para.add_run(f"${savings:,.2f}\n")
+        
+        # Add spacing after summary
+        doc.add_paragraph()
+        doc.add_paragraph()
         
         # Category breakdown
         doc.add_heading("Cost Breakdown by Category", level=2)
@@ -275,6 +283,11 @@ class WordExporter:
                         para.add_run(f", Total PV: ${service['present_value_total']:,.2f}")
                     
                     para.add_run("\n")
+            
+            # Add spacing between categories
+            doc.add_paragraph()
+            doc.add_paragraph("─" * 80)  # Visual separator
+            doc.add_paragraph()
         
         # Detailed cost schedule table
         doc.add_page_break()
@@ -292,10 +305,21 @@ class WordExporter:
             'Cumulative PV': 'Cumulative Cost (Present Value)'
         }
 
+        # Add spacing before table
+        doc.add_paragraph()
+        
         # Create table with proper formatting
         table = doc.add_table(rows=1, cols=len(df.columns))
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
         table.style = 'Table Grid'
+        
+        # Add table padding and styling
+        for row in table.rows:
+            for cell in row.cells:
+                cell.top_margin = Pt(6)
+                cell.bottom_margin = Pt(6)
+                cell.left_margin = Pt(8)
+                cell.right_margin = Pt(8)
 
         # Set column widths for better fit in landscape
         for i, col in enumerate(table.columns):
@@ -318,6 +342,13 @@ class WordExporter:
         # Data rows with improved formatting
         for _, row in df.iterrows():
             row_cells = table.add_row().cells
+            # Apply padding to new row cells
+            for cell in row_cells:
+                cell.top_margin = Pt(6)
+                cell.bottom_margin = Pt(6)
+                cell.left_margin = Pt(8)
+                cell.right_margin = Pt(8)
+            
             for idx, col in enumerate(df.columns):
                 value = row[col]
                 if isinstance(value, (int, float)) and col not in ['Year', 'Age']:
@@ -327,13 +358,24 @@ class WordExporter:
                 # Center align all data
                 row_cells[idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
         
+        # Add spacing after table
+        doc.add_paragraph()
+        doc.add_paragraph()
+        
         # Add chart if requested
         if include_chart:
             chart_path = self._create_chart()
             if chart_path and os.path.exists(chart_path):
                 doc.add_page_break()
-                doc.add_heading("Present Value Chart", level=2)
-                doc.add_picture(chart_path, width=Inches(6))
+                doc.add_heading("Cost Visualization", level=2)
+                doc.add_paragraph()  # Add spacing before chart
+                
+                # Center the chart
+                chart_para = doc.add_paragraph()
+                chart_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                chart_run = chart_para.add_run()
+                chart_run.add_picture(chart_path, width=Inches(8))  # Larger chart for better readability
+                
                 # Clean up temporary chart file
                 os.remove(chart_path)
         
