@@ -41,7 +41,7 @@ class CostCalculator:
         
         # Handle recurring and discrete services (existing logic)
         # Calculate inflation adjustment from base year
-        inflation_factor = Decimal(str(1 + service.inflation_rate)) ** years_from_base
+        inflation_factor = Decimal(str(1 + service.inflation_rate / 100)) ** int(years_from_base)
         
         # Check if service applies to this year
         if service.occurrence_years:
@@ -74,9 +74,9 @@ class CostCalculator:
     
     def build_cost_schedule(self) -> pd.DataFrame:
         """Build comprehensive year-by-year cost schedule."""
-        base_year = self.lcp.settings.base_year
-        projection_years = self.lcp.settings.projection_years
-        end_year = base_year + int(projection_years)
+        base_year = int(self.lcp.settings.base_year)
+        projection_years = int(self.lcp.settings.projection_years)
+        end_year = base_year + projection_years
         year_range = range(base_year, end_year)
         
         rows = []

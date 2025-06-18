@@ -199,8 +199,8 @@ class WordExporter:
         metadata_para.add_run(f"{self.lcp.evaluee.current_age} years old (in {self.lcp.settings.base_year})\n")
 
         metadata_para.add_run("Analysis Period: ").bold = True
-        end_year = self.lcp.settings.base_year + int(self.lcp.settings.projection_years) - 1
-        metadata_para.add_run(f"{self.lcp.settings.projection_years} years ({self.lcp.settings.base_year} to {end_year})\n")
+        end_year = int(self.lcp.settings.base_year) + int(self.lcp.settings.projection_years) - 1
+        metadata_para.add_run(f"{int(self.lcp.settings.projection_years)} years ({int(self.lcp.settings.base_year)} to {end_year})\n")
 
         if self.lcp.evaluee.discount_calculations:
             metadata_para.add_run("Discount Rate Applied: ").bold = True
@@ -464,11 +464,11 @@ class WordExporter:
         
         # Get detailed year-by-year data
         category_costs = self.calculator.get_cost_by_category()
-        years = list(range(self.lcp.settings.base_year, self.lcp.settings.base_year + self.lcp.settings.projection_years))
+        years = list(range(int(self.lcp.settings.base_year), int(self.lcp.settings.base_year) + int(self.lcp.settings.projection_years)))
         
         # Create a comprehensive table showing services by year
         for year in years:
-            evaluee_age = self.lcp.evaluee.current_age + (year - self.lcp.settings.base_year)
+            evaluee_age = int(self.lcp.evaluee.current_age + (year - self.lcp.settings.base_year))
             doc.add_heading(f"Year {year} (Evaluee Age: {evaluee_age})", level=3)
             
             year_services = []
@@ -492,20 +492,22 @@ class WordExporter:
                             service_applies = True
                             service_cost = service['unit_cost'] * service['frequency_per_year']
                     else:
-                        start_year = service['start_year'] if service['start_year'] else self.lcp.settings.base_year
-                        end_year = service['end_year'] if service['end_year'] else (self.lcp.settings.base_year + self.lcp.settings.projection_years - 1)
+                        start_year = int(service['start_year']) if service['start_year'] else int(self.lcp.settings.base_year)
+                        end_year = int(service['end_year']) if service['end_year'] else (int(self.lcp.settings.base_year) + int(self.lcp.settings.projection_years) - 1)
                         if start_year <= year <= end_year:
                             service_applies = True
                             service_cost = service['unit_cost'] * service['frequency_per_year']
                     
                     if service_applies:
                         # Apply inflation to get cost for this specific year
-                        years_from_base = year - self.lcp.settings.base_year
-                        inflated_cost = service_cost * ((1 + service['inflation_rate'] / 100) ** years_from_base)
+                        years_from_base = year - int(self.lcp.settings.base_year)
+                        inflated_cost = float(service_cost) * ((1 + float(service['inflation_rate']) / 100) ** years_from_base)
                         
                         # Calculate present value if needed
                         if self.lcp.evaluee.discount_calculations:
-                            service_cost_pv = inflated_cost / ((1 + self.lcp.settings.discount_rate) ** years_from_base)
+                            service_cost_pv = inflated_cost / ((1 + float(self.lcp.settings.discount_rate)) ** years_from_base)
+                        else:
+                            service_cost_pv = 0
                         
                         year_services.append({
                             'category': table_name,
