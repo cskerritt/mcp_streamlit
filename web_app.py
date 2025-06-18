@@ -567,7 +567,7 @@ def create_chart_data(df: pd.DataFrame) -> Dict[str, Any]:
             x=df["Year"],
             y=df["Present Value"],
             name="Present Value",
-            marker_color="steelblue"
+            marker_color="black"
         ))
         pv_chart.update_layout(
             title="Present Value of Medical Costs by Year",
@@ -583,14 +583,14 @@ def create_chart_data(df: pd.DataFrame) -> Dict[str, Any]:
             y=df["Total Nominal"],
             mode='lines+markers',
             name="Nominal Cost",
-            line=dict(color="red")
+            line=dict(color="black")
         ))
         comparison_chart.add_trace(go.Scatter(
             x=df["Year"],
             y=df["Present Value"],
             mode='lines+markers',
             name="Present Value",
-            line=dict(color="blue")
+            line=dict(color="gray")
         ))
         comparison_chart.update_layout(
             title="Nominal Cost vs Present Value Over Time",
@@ -610,7 +610,7 @@ def create_chart_data(df: pd.DataFrame) -> Dict[str, Any]:
             x=df["Year"],
             y=df["Total Nominal"],
             name="Nominal Cost",
-            marker_color="green"
+            marker_color="black"
         ))
         nominal_chart.update_layout(
             title="Nominal Medical Costs by Year",

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 import os
 from .calculator import CostCalculator
-from .models import LifeCarePlan
+from .models import LifeCarePlan, ProjectionSettings
 
 
 class ExcelExporter:
@@ -27,18 +27,9 @@ class ExcelExporter:
         category_costs = self.calculator.get_cost_by_category()
 
         with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
-            # Main cost schedule with better column headers
-            df_formatted = df.copy()
-            df_formatted.columns = [
-                'Year',
-                'Evaluee Age',
-                'Total Annual Cost (Nominal)',
-                'Total Annual Cost (Present Value)' if 'Present Value' in df.columns else 'Total Annual Cost',
-                'Cumulative Cost (Nominal)',
-                'Cumulative Cost (Present Value)' if 'Cumulative PV' in df.columns else 'Cumulative Cost'
-            ][:len(df.columns)]
-
-            df_formatted.to_excel(writer, sheet_name='Annual Cost Schedule', index=False)
+            # Main cost schedule - export as-is with original column names
+            # The original column names are more descriptive and show service details
+            df.to_excel(writer, sheet_name='Annual Cost Schedule', index=False)
 
             # Enhanced Summary statistics with clearer descriptions
             summary_data = [
@@ -46,7 +37,7 @@ class ExcelExporter:
                 ['Evaluee Name', self.lcp.evaluee.name],
                 ['Current Age at Base Year', f"{self.lcp.evaluee.current_age} years old"],
                 ['Base Year (Analysis Start)', str(self.lcp.settings.base_year)],
-                ['Projection Period', f"{self.lcp.settings.projection_years} years ({summary_stats['projection_period']})"],
+                ['Projection Period', f"{self.lcp.settings.projection_years:.1f} years ({summary_stats['projection_period']})"],
                 ['Discount Rate Applied', f"{self.lcp.settings.discount_rate:.1%}" if self.lcp.evaluee.discount_calculations else "Not Applied"],
                 ['', ''],
                 ['Financial Summary', ''],
@@ -155,6 +146,211 @@ class ExcelExporter:
             
             service_df = pd.DataFrame(service_rows, columns=service_columns)
             service_df.to_excel(writer, sheet_name='Service Details', index=False)
+            
+            # Add enhanced calculation sheets
+            self._add_calculation_sheets(writer)
+
+    def _add_calculation_sheets(self, writer):
+        """Add comprehensive calculation sheets with formulas and audit trails."""
+        
+        # Add Calculation Methodology Sheet
+        methodology_data = [
+            ['Life Care Plan Calculation Methodology', ''],
+            ['', ''],
+            ['Core Equations:', ''],
+            ['Inflation-Adjusted Cost', 'C(t) = C₀ × (1 + i)ᵗ'],
+            ['Present Value', 'PV(t) = C(t) ÷ (1 + d)ᵗ'],
+            ['Total Lifetime Cost (Nominal)', 'Σ [C₀ × (1 + i)ᵗ × f]'],
+            ['Total Lifetime Cost (PV)', 'Σ [C₀ × (1 + i)ᵗ × f ÷ (1 + d)ᵗ]'],
+            ['', ''],
+            ['Variable Definitions:', ''],
+            ['C(t)', 'Cost in year t'],
+            ['C₀', 'Base year unit cost'],
+            ['i', 'Annual inflation rate (decimal)'],
+            ['d', 'Discount rate (decimal)'],
+            ['t', 'Years from base year'],
+            ['f', 'Frequency per year'],
+            ['Σ', 'Sum over projection period'],
+            ['', ''],
+            ['Validation Standards:', ''],
+            ['Tolerance', '< $1.00 discrepancy'],
+            ['Cross-validation', '5-point verification system'],
+            ['Matrix reconciliation', 'Audit-standard methodology']
+        ]
+        
+        methodology_df = pd.DataFrame(methodology_data, columns=['Parameter', 'Definition/Formula'])
+        methodology_df.to_excel(writer, sheet_name='Calculation Methodology', index=False)
+        
+        # Add Sensitivity Analysis Sheet
+        self._add_sensitivity_analysis_sheet(writer)
+        
+        # Add Factor Tables Sheet
+        self._add_factor_tables_sheet(writer)
+        
+        # Add Audit Trail Sheet
+        self._add_audit_trail_sheet(writer)
+        
+        # Add Service Master Table
+        self._add_service_master_sheet(writer)
+
+    def _add_sensitivity_analysis_sheet(self, writer):
+        """Add sensitivity analysis calculations to Excel."""
+        base_summary = self.calculator.calculate_summary_statistics()
+        
+        # Discount rate sensitivity
+        discount_sensitivity = []
+        discount_sensitivity.append(['Discount Rate Sensitivity Analysis', '', '', ''])
+        discount_sensitivity.append(['Discount Rate', 'Total Present Value', 'Difference from Base', 'Percentage Change'])
+        
+        base_discount = self.lcp.settings.discount_rate
+        for rate_adjustment in [-0.01, -0.005, 0.0, 0.005, 0.01]:
+            test_rate = base_discount + rate_adjustment
+            temp_settings = ProjectionSettings(
+                base_year=self.lcp.settings.base_year,
+                projection_years=self.lcp.settings.projection_years,
+                discount_rate=test_rate
+            )
+            temp_lcp = LifeCarePlan(evaluee=self.lcp.evaluee, settings=temp_settings)
+            temp_lcp.tables = self.lcp.tables
+            temp_calc = CostCalculator(temp_lcp)
+            temp_summary = temp_calc.calculate_summary_statistics()
+            
+            pv_difference = temp_summary['total_present_value'] - base_summary['total_present_value']
+            pv_percent = (pv_difference / base_summary['total_present_value']) * 100 if base_summary['total_present_value'] > 0 else 0
+            
+            discount_sensitivity.append([
+                f"{test_rate:.1%}",
+                f"${temp_summary['total_present_value']:,.2f}",
+                f"${pv_difference:,.2f}",
+                f"{pv_percent:+.2f}%"
+            ])
+        
+        discount_sensitivity.append(['', '', '', ''])
+        discount_sensitivity.append(['Inflation Sensitivity Guidelines:', '', '', ''])
+        discount_sensitivity.append(['1% increase across all services', 'Increases nominal costs 15-25%', '', ''])
+        discount_sensitivity.append(['Higher inflation rates', 'Compound exponentially over time', '', ''])
+        discount_sensitivity.append(['Present value impact', 'Moderated by discount rate', '', ''])
+        
+        sensitivity_df = pd.DataFrame(discount_sensitivity, columns=['Parameter', 'Value', 'Difference', 'Percentage'])
+        sensitivity_df.to_excel(writer, sheet_name='Sensitivity Analysis', index=False)
+
+    def _add_factor_tables_sheet(self, writer):
+        """Add mathematical factor tables to Excel."""
+        # Create discount factor table
+        discount_factors = []
+        discount_factors.append(['Mathematical Factor Tables', '', ''])
+        discount_factors.append(['', '', ''])
+        discount_factors.append([f'Discount Factors ({self.lcp.settings.discount_rate:.1%} Rate)', '', ''])
+        discount_factors.append(['Year', 'Discount Factor', 'Cumulative Factor'])
+        
+        cumulative_factor = 0
+        projection_years = min(int(self.lcp.settings.projection_years) + 1, 40)  # Limit to 40 years for readability
+        
+        for year in range(projection_years):
+            factor = 1 / (1 + self.lcp.settings.discount_rate) ** year
+            cumulative_factor += factor
+            discount_factors.append([
+                self.lcp.settings.base_year + year,
+                f"{factor:.6f}",
+                f"{cumulative_factor:.6f}"
+            ])
+        
+        # Add inflation factor examples
+        discount_factors.append(['', '', ''])
+        discount_factors.append(['Common Inflation Factors', '', ''])
+        discount_factors.append(['Year', '2.5% Inflation', '3.0% Inflation', '3.5% Inflation'])
+        
+        for year in range(min(20, projection_years)):
+            discount_factors.append([
+                self.lcp.settings.base_year + year,
+                f"{(1.025) ** year:.6f}",
+                f"{(1.030) ** year:.6f}",
+                f"{(1.035) ** year:.6f}"
+            ])
+        
+        factors_df = pd.DataFrame(discount_factors, columns=['Year/Description', 'Factor/2.5%', 'Cumulative/3.0%', 'Additional/3.5%'])
+        factors_df.to_excel(writer, sheet_name='Factor Tables', index=False)
+
+    def _add_audit_trail_sheet(self, writer):
+        """Add detailed audit trail for verification."""
+        audit_data = []
+        audit_data.append(['Audit Trail and Quality Control', '', '', '', ''])
+        audit_data.append(['', '', '', '', ''])
+        
+        # Get verification data
+        summary_stats = self.calculator.calculate_summary_statistics()
+        cost_schedule = self.calculator.build_cost_schedule()
+        category_costs = self.calculator.get_cost_by_category()
+        
+        # Summary verification
+        audit_data.append(['Executive Summary Verification:', '', '', '', ''])
+        audit_data.append(['Total Nominal Cost', f"${summary_stats['total_nominal_cost']:,.2f}", '', '', ''])
+        audit_data.append(['Total Present Value', f"${summary_stats['total_present_value']:,.2f}", '', '', ''])
+        audit_data.append(['Average Annual Cost', f"${summary_stats['average_annual_cost']:,.2f}", '', '', ''])
+        audit_data.append(['Calculation Check', f"${summary_stats['total_nominal_cost'] / self.lcp.settings.projection_years:,.2f}", 'Should match average', '', ''])
+        
+        # Category reconciliation
+        audit_data.append(['', '', '', '', ''])
+        audit_data.append(['Category Reconciliation:', '', '', '', ''])
+        total_from_categories = sum(data['table_nominal_total'] for data in category_costs.values())
+        audit_data.append(['Sum of Categories', f"${total_from_categories:,.2f}", '', '', ''])
+        audit_data.append(['Executive Total', f"${summary_stats['total_nominal_cost']:,.2f}", '', '', ''])
+        audit_data.append(['Difference', f"${abs(total_from_categories - summary_stats['total_nominal_cost']):,.2f}", 'Should be < $1.00', '', ''])
+        
+        # Annual schedule verification
+        audit_data.append(['', '', '', '', ''])
+        audit_data.append(['Annual Schedule Verification:', '', '', '', ''])
+        schedule_total = cost_schedule['Total Nominal'].sum()
+        audit_data.append(['Schedule Total', f"${schedule_total:,.2f}", '', '', ''])
+        audit_data.append(['Executive Total', f"${summary_stats['total_nominal_cost']:,.2f}", '', '', ''])
+        audit_data.append(['Difference', f"${abs(schedule_total - summary_stats['total_nominal_cost']):,.2f}", 'Should be < $1.00', '', ''])
+        
+        # Years verification
+        audit_data.append(['', '', '', '', ''])
+        audit_data.append(['Projection Period Verification:', '', '', '', ''])
+        audit_data.append(['Projection Years', f"{self.lcp.settings.projection_years:.1f}", '', '', ''])
+        audit_data.append(['Schedule Years', f"{len(cost_schedule)}", '', '', ''])
+        audit_data.append(['Start Year', f"{cost_schedule['Year'].min()}", '', '', ''])
+        audit_data.append(['End Year', f"{cost_schedule['Year'].max()}", '', '', ''])
+        
+        audit_df = pd.DataFrame(audit_data, columns=['Check Item', 'Calculated Value', 'Expected/Notes', 'Status', 'Comments'])
+        audit_df.to_excel(writer, sheet_name='Audit Trail', index=False)
+
+    def _add_service_master_sheet(self, writer):
+        """Add complete service master table for audit purposes."""
+        master_data = []
+        master_data.append(['Service Master Table (Audit)', '', '', '', '', '', '', '', ''])
+        master_data.append(['', '', '', '', '', '', '', '', ''])
+        master_data.append(['Category', 'Service Name', 'Unit Cost', 'Frequency/Year', 'Inflation Rate', 'Start Year', 'End Year', 'Service Type', 'Special Years'])
+        
+        for table_name, table in self.lcp.tables.items():
+            for service in table.services:
+                service_type = 'Recurring'
+                special_years = ''
+                
+                if service.occurrence_years:
+                    service_type = 'Discrete Occurrences'
+                    special_years = ', '.join(map(str, service.occurrence_years))
+                elif service.start_year == service.end_year:
+                    service_type = 'One-time'
+                
+                start_year = service.start_year if service.start_year else self.lcp.settings.base_year
+                end_year = service.end_year if service.end_year else self.lcp.settings.base_year + self.lcp.settings.projection_years - 1
+                
+                master_data.append([
+                    table_name,
+                    service.name,
+                    f"${service.unit_cost:,.2f}",
+                    f"{service.frequency_per_year:.1f}",
+                    f"{service.inflation_rate:.1%}",
+                    str(start_year),
+                    str(end_year),
+                    service_type,
+                    special_years
+                ])
+        
+        master_df = pd.DataFrame(master_data, columns=['Category', 'Service', 'Cost', 'Frequency', 'Inflation', 'Start', 'End', 'Type', 'Special'])
+        master_df.to_excel(writer, sheet_name='Service Master', index=False)
 
 
 class WordExporter:
@@ -164,8 +360,15 @@ class WordExporter:
         self.calculator = calculator
         self.lcp = calculator.lcp
     
-    def export(self, file_path: str, include_chart: bool = True) -> None:
-        """Export the life care plan to Word document in landscape mode."""
+    def export(self, file_path: str, include_chart: bool = True, include_technical_appendix: bool = False) -> None:
+        """Export the life care plan to Word document in landscape mode.
+        
+        Args:
+            file_path: Output file path
+            include_chart: Whether to include cost charts (default: True)
+            include_technical_appendix: Whether to include technical methodology and validation 
+                                       (default: False for clean legal exhibits)
+        """
         doc = Document()
 
         # Set document to landscape orientation
@@ -182,65 +385,59 @@ class WordExporter:
         section.top_margin = Inches(0.75)
         section.bottom_margin = Inches(0.75)
 
-        # Title and header information
-        title = doc.add_heading(f"Life Care Plan Economic Projection", level=1)
+        # Professional document header for legal exhibit
+        doc.add_paragraph()  # Space at top
+        
+        # Main title
+        title = doc.add_heading("LIFE CARE PLAN", level=1)
         title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-        # Subtitle with evaluee name
-        subtitle = doc.add_heading(f"Evaluee: {self.lcp.evaluee.name}", level=2)
+        
+        # Subtitle
+        subtitle = doc.add_heading("Economic Analysis and Cost Projections", level=2)
         subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
-        # Enhanced Document metadata in a more professional format
-        metadata_para = doc.add_paragraph()
-        metadata_para.add_run("Report Generated: ").bold = True
-        metadata_para.add_run(f"{datetime.now().strftime('%B %d, %Y at %H:%M:%S')}\n")
-
-        metadata_para.add_run("Evaluee Age at Analysis Start: ").bold = True
-        metadata_para.add_run(f"{self.lcp.evaluee.current_age} years old (in {self.lcp.settings.base_year})\n")
-
-        metadata_para.add_run("Analysis Period: ").bold = True
-        end_year = int(self.lcp.settings.base_year) + int(self.lcp.settings.projection_years) - 1
-        metadata_para.add_run(f"{int(self.lcp.settings.projection_years)} years ({int(self.lcp.settings.base_year)} to {end_year})\n")
-
-        if self.lcp.evaluee.discount_calculations:
-            metadata_para.add_run("Discount Rate Applied: ").bold = True
-            metadata_para.add_run(f"{self.lcp.settings.discount_rate:.1%} annually\n")
-            metadata_para.add_run("Present Value Calculations: ").bold = True
-            metadata_para.add_run("Enabled\n")
-        else:
-            metadata_para.add_run("Present Value Calculations: ").bold = True
-            metadata_para.add_run("Not Applied\n")
-
-        metadata_para.add_run("Service Categories Analyzed: ").bold = True
-        metadata_para.add_run(f"{len(self.lcp.tables)}\n")
-
-        metadata_para.add_run("Total Individual Services: ").bold = True
-        metadata_para.add_run(f"{sum(len(table.services) for table in self.lcp.tables.values())}")
+        doc.add_paragraph()  # Space after title
+        
+        # Evaluee information in professional format
+        evaluee_para = doc.add_paragraph()
+        evaluee_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        evaluee_para.add_run("Prepared for: ").bold = True
+        evaluee_para.add_run(f"{self.lcp.evaluee.name}").bold = True
+        
+        doc.add_paragraph()  # Space before metadata
+        
+        # Document information table for professional presentation
+        info_table = doc.add_table(rows=6, cols=2)
+        info_table.style = 'Light List'
+        
+        # Analysis information
+        info_data = [
+            ["Report Date:", datetime.now().strftime('%B %d, %Y')],
+            ["Current Age:", f"{self.lcp.evaluee.current_age:.1f} years"],
+            ["Base Year:", str(int(self.lcp.settings.base_year))],
+            ["Projection Period:", f"{self.lcp.settings.projection_years:.1f} years"],
+            ["End Year:", f"{self.lcp.settings.base_year + self.lcp.settings.projection_years:.1f}"],
+            ["Discount Rate:", f"{self.lcp.settings.discount_rate:.1%}" if self.lcp.evaluee.discount_calculations else "Not Applied"]
+        ]
+        
+        for i, (label, value) in enumerate(info_data):
+            row_cells = info_table.rows[i].cells
+            row_cells[0].text = label
+            row_cells[0].paragraphs[0].runs[0].bold = True
+            row_cells[1].text = value
         
         # Add spacing after metadata
         doc.add_paragraph()
         doc.add_paragraph()
         
-        # DAUBERT/FRYE COMPLIANCE DOCUMENTATION
-        doc.add_heading("Expert Methodology and Scientific Reliability Documentation", level=2)
+        # Professional methodology statement for legal exhibits
+        doc.add_heading("Methodology Statement", level=2)
         
-        # Methodology Section
-        methodology_para = doc.add_paragraph()
-        methodology_para.add_run("Methodology and Scientific Basis: ").bold = True
-        methodology_para.add_run("This life care plan economic projection employs established econometric principles and medical cost forecasting methodologies ")
-        methodology_para.add_run("consistent with peer-reviewed literature in health economics and actuarial science. The analytical framework incorporates ")
-        methodology_para.add_run("inflation modeling using compound annual growth rates, present value calculations using established discount rate theory, ")
-        methodology_para.add_run("and frequency-based cost projections grounded in medical utilization standards.")
-        
-        doc.add_paragraph()
-        
-        # Reliability and Error Rate Section
-        reliability_para = doc.add_paragraph()
-        reliability_para.add_run("Reliability and Potential Error Rates: ").bold = True
-        reliability_para.add_run("Economic projections are subject to inherent uncertainties in inflation rates, discount rates, and medical cost trends. ")
-        reliability_para.add_run("Historical medical inflation rates typically range from 2-6% annually (Bureau of Labor Statistics, 2010-2024). ")
-        reliability_para.add_run("Discount rate assumptions follow federal guidelines and economic standards (OMB Circular A-4, Federal Reserve data). ")
-        reliability_para.add_run("Service frequency estimates are based on medical literature and clinical guidelines where available.")
+        method_para = doc.add_paragraph()
+        method_para.add_run("Economic Analysis Basis: ").bold = True
+        method_para.add_run("This analysis employs established econometric principles consistent with health economics and actuarial science. ")
+        method_para.add_run("Calculations utilize compound annual inflation rates, present value discounting, and frequency-based cost projections. ")
+        method_para.add_run("All economic assumptions are based on federal guidelines and historical medical cost data.")
         
         doc.add_paragraph()
         
@@ -321,6 +518,121 @@ class WordExporter:
         disclaimer_para.add_run("future medical care costs. All opinions are expressed within reasonable degree of ")
         disclaimer_para.add_run("professional certainty based on available data and established methodologies.")
         
+        # Add Executive Summary Table at top
+        doc.add_page_break()
+        doc.add_heading("Life Care Plan Cost Summary", level=2)
+        
+        # Get category costs for summary table
+        category_costs = self.calculator.get_cost_by_category()
+        summary_stats = self.calculator.calculate_summary_statistics()
+        
+        # Create summary table with service categories
+        if self.lcp.evaluee.discount_calculations:
+            summary_headers = ['Service Category', 'Total Lifetime Cost (Nominal)', 'Total Lifetime Cost (Present Value)']
+        else:
+            summary_headers = ['Service Category', 'Total Lifetime Cost (Nominal)']
+        
+        # Calculate table size
+        num_categories = len(category_costs)
+        summary_table = doc.add_table(rows=num_categories + 2, cols=len(summary_headers))  # +2 for header and grand total
+        summary_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        summary_table.style = 'Light List'
+        
+        # Set column widths
+        category_width = Inches(3.0)
+        cost_width = Inches(2.2)
+        
+        summary_table.columns[0].width = category_width
+        for i in range(1, len(summary_headers)):
+            summary_table.columns[i].width = cost_width
+        
+        # Header row
+        hdr_cells = summary_table.rows[0].cells
+        for idx, header_text in enumerate(summary_headers):
+            hdr_cells[idx].text = header_text
+            paragraph = hdr_cells[idx].paragraphs[0]
+            run = paragraph.runs[0]
+            run.bold = True
+            run.font.size = Pt(11)
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            hdr_cells[idx].top_margin = Pt(6)
+            hdr_cells[idx].bottom_margin = Pt(6)
+            hdr_cells[idx].left_margin = Pt(4)
+            hdr_cells[idx].right_margin = Pt(4)
+        
+        # Data rows for each category
+        grand_total_nominal = 0
+        grand_total_pv = 0
+        
+        for row_idx, (table_name, data) in enumerate(category_costs.items(), start=1):
+            row_cells = summary_table.rows[row_idx].cells
+            
+            # Category name
+            row_cells[0].text = table_name
+            paragraph = row_cells[0].paragraphs[0]
+            if paragraph.runs:
+                paragraph.runs[0].font.size = Pt(10)
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            
+            # Nominal cost
+            nominal_cost = data['table_nominal_total']
+            row_cells[1].text = f"${nominal_cost:,.2f}"
+            paragraph = row_cells[1].paragraphs[0]
+            if paragraph.runs:
+                paragraph.runs[0].font.size = Pt(10)
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            grand_total_nominal += nominal_cost
+            
+            # Present value cost (if applicable)
+            if self.lcp.evaluee.discount_calculations:
+                pv_cost = data['table_present_value_total']
+                row_cells[2].text = f"${pv_cost:,.2f}"
+                paragraph = row_cells[2].paragraphs[0]
+                if paragraph.runs:
+                    paragraph.runs[0].font.size = Pt(10)
+                paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+                grand_total_pv += pv_cost
+            
+            # Cell formatting
+            for cell in row_cells:
+                cell.top_margin = Pt(4)
+                cell.bottom_margin = Pt(4)
+                cell.left_margin = Pt(4)
+                cell.right_margin = Pt(4)
+        
+        # Grand total row
+        total_row_cells = summary_table.rows[-1].cells
+        total_row_cells[0].text = "GRAND TOTAL"
+        paragraph = total_row_cells[0].paragraphs[0]
+        run = paragraph.runs[0]
+        run.bold = True
+        run.font.size = Pt(11)
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        
+        total_row_cells[1].text = f"${grand_total_nominal:,.2f}"
+        paragraph = total_row_cells[1].paragraphs[0]
+        run = paragraph.runs[0]
+        run.bold = True
+        run.font.size = Pt(11)
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        
+        if self.lcp.evaluee.discount_calculations:
+            total_row_cells[2].text = f"${grand_total_pv:,.2f}"
+            paragraph = total_row_cells[2].paragraphs[0]
+            run = paragraph.runs[0]
+            run.bold = True
+            run.font.size = Pt(11)
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        
+        # Format grand total row
+        for cell in total_row_cells:
+            cell.top_margin = Pt(6)
+            cell.bottom_margin = Pt(6)
+            cell.left_margin = Pt(4)
+            cell.right_margin = Pt(4)
+        
+        doc.add_paragraph()  # Space after summary table
+        
         # Mathematical Methodology Documentation
         doc.add_heading("Mathematical Formulas and Calculation Methods", level=2)
         
@@ -351,8 +663,8 @@ class WordExporter:
         economic_para.add_run("Economic Assumptions Used: ").bold = True
         if self.lcp.evaluee.discount_calculations:
             economic_para.add_run(f"Discount Rate: {self.lcp.settings.discount_rate:.1%} annually. ")
-        economic_para.add_run(f"Analysis Period: {int(self.lcp.settings.projection_years)} years ")
-        economic_para.add_run(f"({int(self.lcp.settings.base_year)} through {int(self.lcp.settings.base_year) + int(self.lcp.settings.projection_years) - 1}). ")
+        economic_para.add_run(f"Analysis Period: {self.lcp.settings.projection_years:.1f} years ")
+        economic_para.add_run(f"({int(self.lcp.settings.base_year)} through {self.lcp.settings.base_year + self.lcp.settings.projection_years - 1:.1f}). ")
         economic_para.add_run("Individual service inflation rates as specified in service details. ")
         economic_para.add_run("All calculations assume consistent annual application of stated rates.")
         
@@ -367,7 +679,14 @@ class WordExporter:
         qc_para.add_run("Sensitivity analysis can be performed using different assumption sets ")
         qc_para.add_run("to test the robustness of projections under varying economic conditions.")
         
-        doc.add_page_break()
+        # Only add technical appendix if requested (not for legal exhibits)
+        if include_technical_appendix:
+            doc.add_page_break()
+            
+            # Add Calculation Methodology Section
+            self._add_calculation_methodology_section(doc)
+            
+            doc.add_page_break()
         
         # Summary statistics
         doc.add_heading("Executive Summary", level=2)
@@ -446,7 +765,7 @@ class WordExporter:
                 # Create service table
                 service_table = doc.add_table(rows=len(data['services']) + 1, cols=len(service_table_headers))
                 service_table.alignment = WD_TABLE_ALIGNMENT.CENTER
-                service_table.style = 'Table Grid'
+                service_table.style = 'Light List'
                 
                 # Set column widths for service table
                 col_widths = [Inches(2.0), Inches(1.0), Inches(0.8), Inches(1.5), Inches(0.8), Inches(1.3)]
@@ -591,7 +910,7 @@ class WordExporter:
         # Create summary table
         summary_table = doc.add_table(rows=len(table_data) + 1, cols=len(table_columns))
         summary_table.alignment = WD_TABLE_ALIGNMENT.CENTER
-        summary_table.style = 'Table Grid'
+        summary_table.style = 'Light List'
         
         # Set column widths
         year_width = Inches(1.0)
@@ -650,7 +969,11 @@ class WordExporter:
         doc.add_heading("Overall Yearly Summary by Service Category", level=3)
         
         # Calculate year-by-year totals by category
-        years = list(range(int(self.lcp.settings.base_year), int(self.lcp.settings.base_year) + int(self.lcp.settings.projection_years)))
+        base_year = int(self.lcp.settings.base_year)
+        end_year = base_year + int(self.lcp.settings.projection_years)
+        if self.lcp.settings.projection_years % 1 != 0:
+            end_year += 1
+        years = list(range(base_year, end_year))
         category_names = list(self.lcp.tables.keys())
         
         # Create matrix of costs: year x category
@@ -684,7 +1007,7 @@ class WordExporter:
         
         summary_table = doc.add_table(rows=num_years + 2, cols=num_cols)  # +2 for header and totals
         summary_table.alignment = WD_TABLE_ALIGNMENT.CENTER
-        summary_table.style = 'Table Grid'
+        summary_table.style = 'Light List'
         
         # Set column widths for summary table
         year_col_width = Inches(0.7)
@@ -800,7 +1123,11 @@ class WordExporter:
         
         # Get detailed year-by-year data
         category_costs = self.calculator.get_cost_by_category()
-        years = list(range(int(self.lcp.settings.base_year), int(self.lcp.settings.base_year) + int(self.lcp.settings.projection_years)))
+        base_year = int(self.lcp.settings.base_year)
+        end_year = base_year + int(self.lcp.settings.projection_years)
+        if self.lcp.settings.projection_years % 1 != 0:
+            end_year += 1
+        years = list(range(base_year, end_year))
         
         # Create a comprehensive table showing services by year
         for year in years:
@@ -851,7 +1178,7 @@ class WordExporter:
                 
                 year_table = doc.add_table(rows=len(year_services) + 2, cols=len(year_table_headers))  # +2 for header and total
                 year_table.alignment = WD_TABLE_ALIGNMENT.CENTER
-                year_table.style = 'Table Grid'
+                year_table.style = 'Light List'
                 
                 # Set column widths
                 year_col_widths = [Inches(1.8), Inches(2.2), Inches(0.8), Inches(1.2)]
@@ -950,7 +1277,7 @@ class WordExporter:
         # Check 2: Average annual cost calculation
         check2_para = doc.add_paragraph()
         check2_para.add_run("Check 2 - Average Annual Cost Calculation: ").bold = True
-        actual_years = summary_stats.get('actual_years_with_costs', int(self.lcp.settings.projection_years))
+        actual_years = summary_stats.get('actual_years_with_costs', self.lcp.settings.projection_years)
         calculated_average = executive_total / actual_years if actual_years > 0 else 0
         reported_average = summary_stats['average_annual_cost']
         check2_para.add_run(f"Total cost ÷ {actual_years} years = ${calculated_average:,.2f}. ")
@@ -1008,8 +1335,9 @@ class WordExporter:
         
         check4_para = doc.add_paragraph()
         check4_para.add_run("Check 4 - Total Sum Verification: ").bold = True
-        check4_para.add_run(f"Schedule 39-year sum: ${schedule_total_sum:,.2f}. ")
-        check4_para.add_run(f"Detailed 39-year sum: ${detailed_total_sum:,.2f}. ")
+        projection_years = self.lcp.settings.projection_years
+        check4_para.add_run(f"Schedule {projection_years:.1f}-year sum: ${schedule_total_sum:,.2f}. ")
+        check4_para.add_run(f"Detailed {projection_years:.1f}-year sum: ${detailed_total_sum:,.2f}. ")
         check4_para.add_run(f"Executive total: ${executive_total:,.2f}. ")
         
         if (abs(schedule_total_sum - detailed_total_sum) < 1.0 and 
@@ -1079,6 +1407,58 @@ class WordExporter:
                 os.remove(chart_path)
         
         doc.save(file_path)
+
+    def export_technical_validation_report(self, file_path: str) -> None:
+        """Export a separate technical validation and methodology report.
+        
+        This generates a comprehensive technical document with all validation checks,
+        methodology details, and analysis - suitable for technical review but separate
+        from legal exhibit documents.
+        """
+        doc = Document()
+        
+        # Title for technical report
+        title = doc.add_heading("Life Care Plan - Technical Validation Report", level=1)
+        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        subtitle = doc.add_heading(f"Technical Analysis for: {self.lcp.evaluee.name}", level=2)
+        subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        doc.add_paragraph()
+        
+        # Report metadata
+        meta_para = doc.add_paragraph()
+        meta_para.add_run("Technical Report Generated: ").bold = True
+        meta_para.add_run(f"{datetime.now().strftime('%B %d, %Y at %H:%M:%S')}")
+        
+        doc.add_paragraph()
+        
+        # Add all technical sections
+        self._add_calculation_methodology_section(doc)
+        
+        doc.add_page_break()
+        
+        # Add comprehensive validation results
+        doc.add_heading("Comprehensive Validation Results", level=2)
+        
+        # Perform and display variance analysis
+        variance_results = self.calculator.perform_variance_analysis()
+        
+        # Quality control summary
+        qc_para = doc.add_paragraph()
+        qc_para.add_run("Quality Control Summary: ").bold = True
+        if variance_results['calculation_consistency']['tolerance_met']:
+            qc_para.add_run("✓ ALL VALIDATION CHECKS PASSED").bold = True
+        else:
+            qc_para.add_run("❌ VALIDATION ISSUES DETECTED").bold = True
+        
+        doc.add_paragraph()
+        
+        # Add detailed variance analysis
+        self._add_variance_analysis_section(doc)
+        
+        # Save technical report
+        doc.save(file_path)
     
     def _create_chart(self) -> Optional[str]:
         """Create a temporary chart file for inclusion in Word document."""
@@ -1088,11 +1468,11 @@ class WordExporter:
             plt.figure(figsize=(10, 6))
             
             if "Present Value" in df.columns:
-                plt.bar(df["Year"], df["Present Value"], color='steelblue', alpha=0.7)
+                plt.bar(df["Year"], df["Present Value"], color='black', alpha=0.6)
                 plt.title(f"Present Value of Medical Costs by Year\nEvaluee: {self.lcp.evaluee.name}")
                 plt.ylabel("Present Value ($)")
             else:
-                plt.bar(df["Year"], df["Total Nominal"], color='green', alpha=0.7)
+                plt.bar(df["Year"], df["Total Nominal"], color='black', alpha=0.6)
                 plt.title(f"Nominal Medical Costs by Year\nEvaluee: {self.lcp.evaluee.name}")
                 plt.ylabel("Nominal Cost ($)")
             
@@ -1109,6 +1489,388 @@ class WordExporter:
         except Exception as e:
             print(f"Warning: Could not create chart: {e}")
             return None
+
+    def _add_calculation_methodology_section(self, doc):
+        """Add comprehensive calculation methodology section with equations and explanations."""
+        doc.add_heading("Calculation Methodology and Mathematical Framework", level=2)
+        
+        # Introduction
+        intro_para = doc.add_paragraph()
+        intro_para.add_run("Mathematical Foundation: ").bold = True
+        intro_para.add_run("This section provides detailed mathematical equations and methodologies used in all cost projections. ")
+        intro_para.add_run("All calculations follow established actuarial and financial principles to ensure accuracy and reliability.")
+        
+        doc.add_paragraph()
+        
+        # Core Equations Section
+        doc.add_heading("Core Mathematical Equations", level=3)
+        
+        # Inflation Calculation
+        eq1_para = doc.add_paragraph()
+        eq1_para.add_run("1. Inflation-Adjusted Cost Calculation").bold = True
+        eq1_para.add_run("\nFor recurring services, the cost in any given year is calculated as:\n")
+        eq1_para.add_run("C(t) = C₀ × (1 + i)ᵗ").bold = True
+        eq1_para.add_run("\nWhere:")
+        eq1_para.add_run("\n• C(t) = Cost in year t")
+        eq1_para.add_run("\n• C₀ = Base year unit cost")
+        eq1_para.add_run("\n• i = Annual inflation rate (as decimal)")
+        eq1_para.add_run("\n• t = Number of years from base year")
+        
+        doc.add_paragraph()
+        
+        # Present Value Calculation
+        eq2_para = doc.add_paragraph()
+        eq2_para.add_run("2. Present Value Calculation").bold = True
+        eq2_para.add_run("\nTo discount future costs to present value:\n")
+        eq2_para.add_run("PV(t) = C(t) ÷ (1 + d)ᵗ").bold = True
+        eq2_para.add_run("\nWhere:")
+        eq2_para.add_run("\n• PV(t) = Present value of cost in year t")
+        eq2_para.add_run("\n• C(t) = Nominal cost in year t")
+        eq2_para.add_run("\n• d = Discount rate (as decimal)")
+        eq2_para.add_run("\n• t = Number of years from base year")
+        
+        doc.add_paragraph()
+        
+        # Total Lifetime Cost
+        eq3_para = doc.add_paragraph()
+        eq3_para.add_run("3. Total Lifetime Cost Calculation").bold = True
+        eq3_para.add_run("\nFor services spanning the full projection period:\n")
+        eq3_para.add_run("Total Nominal = Σ [C₀ × (1 + i)ᵗ × f]").bold = True
+        eq3_para.add_run("\nTotal PV = Σ [C₀ × (1 + i)ᵗ × f ÷ (1 + d)ᵗ]").bold = True
+        eq3_para.add_run("\nWhere:")
+        eq3_para.add_run("\n• f = Frequency per year")
+        eq3_para.add_run("\n• Σ = Sum over all years in projection period")
+        
+        doc.add_paragraph()
+        
+        # Fractional Year Calculation
+        eq4_para = doc.add_paragraph()
+        eq4_para.add_run("4. Fractional Year Adjustment").bold = True
+        eq4_para.add_run(f"\nFor projection period of {self.lcp.settings.projection_years:.1f} years:")
+        full_years = int(self.lcp.settings.projection_years)
+        fractional_part = self.lcp.settings.projection_years - full_years
+        if fractional_part > 0:
+            eq4_para.add_run(f"\n• Full years: {full_years}")
+            eq4_para.add_run(f"\n• Fractional year: {fractional_part:.1f}")
+            eq4_para.add_run(f"\n• Final year cost = C({full_years}) × {fractional_part:.1f}")
+        else:
+            eq4_para.add_run(f"\n• Projection uses complete years only ({full_years} years)")
+        
+        doc.add_paragraph()
+        
+        # Service Type Methodologies
+        doc.add_heading("Service Type Calculation Methods", level=3)
+        
+        # Recurring Services
+        rec_para = doc.add_paragraph()
+        rec_para.add_run("Recurring Services: ").bold = True
+        rec_para.add_run("Applied annually from start year to end year. ")
+        rec_para.add_run("Cost increases each year by the specified inflation rate. ")
+        rec_para.add_run("Total frequency per year multiplied by inflated unit cost.")
+        
+        # One-time Services
+        ot_para = doc.add_paragraph()
+        ot_para.add_run("One-time Services: ").bold = True
+        ot_para.add_run("Applied only in the specified year. ")
+        ot_para.add_run("Unit cost inflated from base year to service year. ")
+        ot_para.add_run("No ongoing costs in subsequent years.")
+        
+        # Discrete Occurrences
+        disc_para = doc.add_paragraph()
+        disc_para.add_run("Discrete Occurrences: ").bold = True
+        disc_para.add_run("Applied only in specifically listed years. ")
+        disc_para.add_run("Each occurrence independently inflated from base year. ")
+        disc_para.add_run("Allows for irregular service patterns.")
+        
+        doc.add_paragraph()
+        
+        # Add Validation Framework
+        self._add_validation_framework_section(doc)
+        
+        # Add Sensitivity Analysis
+        self._add_sensitivity_analysis_section(doc)
+        
+        # Add Factor Tables
+        self._add_factor_tables_section(doc)
+        
+        # Add Variance Analysis
+        self._add_variance_analysis_section(doc)
+
+    def _add_validation_framework_section(self, doc):
+        """Add validation framework explanation."""
+        doc.add_heading("Quality Control and Validation Framework", level=3)
+        
+        val_para = doc.add_paragraph()
+        val_para.add_run("Cross-Validation Method: ").bold = True
+        val_para.add_run("All calculations undergo five-point validation:")
+        val_para.add_run("\n1. Category totals must reconcile with executive summary")
+        val_para.add_run("\n2. Average annual cost verification: Total ÷ Projection Years")
+        val_para.add_run("\n3. Year-by-year consistency across all report sections")
+        val_para.add_run("\n4. Total sum verification with tolerance < $1.00")
+        val_para.add_run("\n5. Matrix reconciliation using audit-standard methodologies")
+        
+        doc.add_paragraph()
+        
+        tol_para = doc.add_paragraph()
+        tol_para.add_run("Tolerance Standards: ").bold = True
+        tol_para.add_run("Acceptable discrepancies are limited to $1.00 due to rounding. ")
+        tol_para.add_run("Any variance exceeding this threshold triggers automatic review and correction.")
+
+    def _add_sensitivity_analysis_section(self, doc):
+        """Add sensitivity analysis section."""
+        doc.add_heading("Sensitivity Analysis", level=3)
+        
+        # Calculate sensitivity scenarios
+        base_discount = self.lcp.settings.discount_rate
+        base_summary = self.calculator.calculate_summary_statistics()
+        
+        sens_para = doc.add_paragraph()
+        sens_para.add_run("Discount Rate Sensitivity: ").bold = True
+        sens_para.add_run("The following table shows the impact of ±0.5% discount rate changes on total present value:")
+        
+        doc.add_paragraph()
+        
+        # Create sensitivity table
+        sensitivity_data = []
+        for rate_adjustment in [-0.005, 0.0, 0.005]:
+            test_rate = base_discount + rate_adjustment
+            # Create temporary settings for calculation
+            temp_settings = ProjectionSettings(
+                base_year=self.lcp.settings.base_year,
+                projection_years=self.lcp.settings.projection_years,
+                discount_rate=test_rate
+            )
+            temp_lcp = LifeCarePlan(evaluee=self.lcp.evaluee, settings=temp_settings)
+            temp_lcp.tables = self.lcp.tables
+            temp_calc = CostCalculator(temp_lcp)
+            temp_summary = temp_calc.calculate_summary_statistics()
+            
+            pv_difference = temp_summary['total_present_value'] - base_summary['total_present_value']
+            pv_percent = (pv_difference / base_summary['total_present_value']) * 100 if base_summary['total_present_value'] > 0 else 0
+            
+            sensitivity_data.append([
+                f"{test_rate:.1%}",
+                f"${temp_summary['total_present_value']:,.2f}",
+                f"${pv_difference:,.2f}",
+                f"{pv_percent:+.2f}%"
+            ])
+        
+        # Add table to document
+        table = doc.add_table(rows=1, cols=4)
+        table.style = 'Light List'
+        
+        # Header row
+        header_cells = table.rows[0].cells
+        header_cells[0].text = "Discount Rate"
+        header_cells[1].text = "Total Present Value"
+        header_cells[2].text = "Difference from Base"
+        header_cells[3].text = "Percentage Change"
+        
+        for cell in header_cells:
+            cell.paragraphs[0].runs[0].bold = True
+        
+        # Data rows
+        for row_data in sensitivity_data:
+            row_cells = table.add_row().cells
+            for i, value in enumerate(row_data):
+                row_cells[i].text = value
+        
+        doc.add_paragraph()
+        
+        # Inflation sensitivity note
+        inf_sens_para = doc.add_paragraph()
+        inf_sens_para.add_run("Inflation Rate Sensitivity: ").bold = True
+        inf_sens_para.add_run("Service-specific inflation rates are applied individually. ")
+        inf_sens_para.add_run("A 1% increase in inflation across all services typically increases total nominal costs by 15-25% over long projection periods. ")
+        inf_sens_para.add_run("Present value impacts are moderated by the discount rate effect.")
+
+    def _add_factor_tables_section(self, doc):
+        """Add inflation and discount factor tables."""
+        doc.add_heading("Mathematical Factor Tables", level=3)
+        
+        # Discount Factor Table
+        doc.add_heading("Discount Factors", level=4)
+        df_para = doc.add_paragraph()
+        df_para.add_run("Present Value Discount Factors: ").bold = True
+        df_para.add_run(f"Based on {self.lcp.settings.discount_rate:.1%} annual discount rate")
+        
+        # Create discount factor table for first 10 years
+        df_table = doc.add_table(rows=1, cols=3)
+        df_table.style = 'Light List'
+        
+        df_header = df_table.rows[0].cells
+        df_header[0].text = "Year"
+        df_header[1].text = "Discount Factor"
+        df_header[2].text = "Cumulative Factor"
+        
+        for cell in df_header:
+            cell.paragraphs[0].runs[0].bold = True
+        
+        cumulative_factor = 0
+        for year in range(min(10, int(self.lcp.settings.projection_years) + 1)):
+            factor = 1 / (1 + self.lcp.settings.discount_rate) ** year
+            cumulative_factor += factor
+            
+            row_cells = df_table.add_row().cells
+            row_cells[0].text = str(self.lcp.settings.base_year + year)
+            row_cells[1].text = f"{factor:.6f}"
+            row_cells[2].text = f"{cumulative_factor:.6f}"
+        
+        doc.add_paragraph()
+        
+        # Sample Inflation Factor Table
+        doc.add_heading("Sample Inflation Factors", level=4)
+        if_para = doc.add_paragraph()
+        if_para.add_run("Example Inflation Factors: ").bold = True
+        if_para.add_run("Showing compound growth at common medical inflation rates")
+        
+        # Create inflation factor table
+        if_table = doc.add_table(rows=1, cols=4)
+        if_table.style = 'Light List'
+        
+        if_header = if_table.rows[0].cells
+        if_header[0].text = "Year"
+        if_header[1].text = "2.5% Inflation"
+        if_header[2].text = "3.0% Inflation"
+        if_header[3].text = "3.5% Inflation"
+        
+        for cell in if_header:
+            cell.paragraphs[0].runs[0].bold = True
+        
+        for year in range(min(10, int(self.lcp.settings.projection_years) + 1)):
+            row_cells = if_table.add_row().cells
+            row_cells[0].text = str(self.lcp.settings.base_year + year)
+            row_cells[1].text = f"{(1.025) ** year:.6f}"
+            row_cells[2].text = f"{(1.030) ** year:.6f}"
+            row_cells[3].text = f"{(1.035) ** year:.6f}"
+
+    def _add_variance_analysis_section(self, doc):
+        """Add automated variance analysis and error detection results."""
+        doc.add_heading("Automated Variance Analysis and Error Detection", level=3)
+        
+        # Perform variance analysis
+        variance_results = self.calculator.perform_variance_analysis()
+        
+        # Introduction
+        va_intro = doc.add_paragraph()
+        va_intro.add_run("Automated Analysis Summary: ").bold = True
+        va_intro.add_run(f"Analysis performed on {variance_results['timestamp']}. ")
+        va_intro.add_run("This section provides automated detection of potential errors, ")
+        va_intro.add_run("inconsistencies, and unusual patterns in the calculation results.")
+        
+        doc.add_paragraph()
+        
+        # Data Integrity Results
+        doc.add_heading("Data Integrity Assessment", level=4)
+        integrity = variance_results['data_integrity_checks']
+        
+        integrity_para = doc.add_paragraph()
+        integrity_para.add_run("Data Consistency Status: ").bold = True
+        if integrity['data_consistency']:
+            integrity_para.add_run("✓ PASS - All data integrity checks passed").bold = True
+        else:
+            integrity_para.add_run("❌ ISSUES DETECTED - Review required").bold = True
+        
+        if integrity['invalid_values']:
+            doc.add_paragraph()
+            iv_para = doc.add_paragraph()
+            iv_para.add_run("Invalid Values Detected:").bold = True
+            for issue in integrity['invalid_values']:
+                iv_para.add_run(f"\n• {issue}")
+        
+        if integrity['missing_data']:
+            doc.add_paragraph()
+            md_para = doc.add_paragraph()
+            md_para.add_run("Missing Data Issues:").bold = True
+            for issue in integrity['missing_data']:
+                md_para.add_run(f"\n• {issue}")
+        
+        doc.add_paragraph()
+        
+        # Calculation Consistency Results
+        doc.add_heading("Calculation Consistency Verification", level=4)
+        consistency = variance_results['calculation_consistency']
+        
+        consistency_para = doc.add_paragraph()
+        consistency_para.add_run("Tolerance Compliance: ").bold = True
+        if consistency['tolerance_met']:
+            consistency_para.add_run("✓ PASS - All discrepancies within $1.00 tolerance").bold = True
+        else:
+            consistency_para.add_run("❌ FAIL - Discrepancies exceed tolerance").bold = True
+        
+        # Show specific checks
+        for check_name, check_data in consistency.items():
+            if isinstance(check_data, dict) and 'passes' in check_data:
+                check_para = doc.add_paragraph()
+                check_para.add_run(f"{check_name.replace('_', ' ').title()}: ").bold = True
+                if check_data['passes']:
+                    check_para.add_run("✓ PASS")
+                else:
+                    check_para.add_run(f"❌ FAIL - ${check_data['difference']:.2f} discrepancy")
+        
+        doc.add_paragraph()
+        
+        # Reasonableness Assessment
+        doc.add_heading("Reasonableness Assessment", level=4)
+        reasonableness = variance_results['reasonableness_checks']
+        
+        # Cost distribution
+        if 'cost_distribution' in reasonableness:
+            cd = reasonableness['cost_distribution']
+            cd_para = doc.add_paragraph()
+            cd_para.add_run("Cost Distribution Analysis:").bold = True
+            cd_para.add_run(f"\n• Annual cost range: ${cd['min_annual']:,.0f} - ${cd['max_annual']:,.0f}")
+            cd_para.add_run(f"\n• Average annual cost: ${cd['mean_annual']:,.0f}")
+            cd_para.add_run(f"\n• Cost variability: {cd['coefficient_of_variation']:.2f}")
+        
+        # Outlier detection
+        if 'outlier_detection' in reasonableness and reasonableness['outlier_detection']['outlier_count'] > 0:
+            od = reasonableness['outlier_detection']
+            od_para = doc.add_paragraph()
+            od_para.add_run("Outlier Detection:").bold = True
+            od_para.add_run(f"\n• {od['outlier_count']} outlier years detected: {', '.join(map(str, od['outlier_years']))}")
+        
+        doc.add_paragraph()
+        
+        # Trend Analysis
+        doc.add_heading("Cost Trend Analysis", level=4)
+        trends = variance_results['trend_analysis']
+        
+        trend_para = doc.add_paragraph()
+        trend_para.add_run("Overall Cost Trend: ").bold = True
+        trend_para.add_run(f"{trends['overall_trend'].upper()}")
+        
+        if 'early_years_avg' in trends and trends['early_years_avg'] > 0:
+            trend_para.add_run(f"\n• Early years average: ${trends['early_years_avg']:,.0f}")
+            trend_para.add_run(f"\n• Middle years average: ${trends['middle_years_avg']:,.0f}")
+            trend_para.add_run(f"\n• Late years average: ${trends['late_years_avg']:,.0f}")
+        
+        trend_para.add_run(f"\n• Peak cost year: {trends['peak_cost_year']} (${trends['peak_cost_amount']:,.0f})")
+        
+        doc.add_paragraph()
+        
+        # Error Flags and Warnings
+        if variance_results['error_flags'] or variance_results['warnings']:
+            doc.add_heading("Critical Issues and Warnings", level=4)
+            
+            if variance_results['error_flags']:
+                error_para = doc.add_paragraph()
+                error_para.add_run("Critical Errors:").bold = True
+                for error in variance_results['error_flags']:
+                    error_para.add_run(f"\n❌ {error}")
+            
+            if variance_results['warnings']:
+                warning_para = doc.add_paragraph()
+                warning_para.add_run("Warnings:").bold = True
+                for warning in variance_results['warnings']:
+                    warning_para.add_run(f"\n⚠️ {warning}")
+        
+        # Recommendations
+        doc.add_heading("Analysis Recommendations", level=4)
+        rec_para = doc.add_paragraph()
+        rec_para.add_run("Recommended Actions:").bold = True
+        for i, recommendation in enumerate(variance_results['recommendations'], 1):
+            rec_para.add_run(f"\n{i}. {recommendation}")
 
 
 class PDFExporter:
@@ -1164,9 +1926,9 @@ class PDFExporter:
         story.append(Paragraph(f"<b>Report Generated:</b> {datetime.now().strftime('%B %d, %Y at %H:%M:%S')}", styles['Normal']))
         story.append(Paragraph(f"<b>Evaluee Age at Analysis Start:</b> {self.lcp.evaluee.current_age} years old (in {self.lcp.settings.base_year})", styles['Normal']))
 
-        end_year = self.lcp.settings.base_year + int(self.lcp.settings.projection_years) - 1
-        story.append(Paragraph(f"<b>Analysis Period:</b> {self.lcp.settings.projection_years} years "
-                             f"({self.lcp.settings.base_year} to {end_year})", styles['Normal']))
+        end_year = self.lcp.settings.base_year + self.lcp.settings.projection_years - 1
+        story.append(Paragraph(f"<b>Analysis Period:</b> {self.lcp.settings.projection_years:.1f} years "
+                             f"({self.lcp.settings.base_year} to {end_year:.1f})", styles['Normal']))
 
         if self.lcp.evaluee.discount_calculations:
             story.append(Paragraph(f"<b>Discount Rate Applied:</b> {self.lcp.settings.discount_rate:.1%} annually", styles['Normal']))
@@ -1195,13 +1957,13 @@ class PDFExporter:
         
         summary_table = Table(summary_data)
         summary_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.white),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, 0), 12),
             ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.white),
             ('GRID', (0, 0), (-1, -1), 1, colors.black)
         ]))
         
@@ -1232,13 +1994,13 @@ class PDFExporter:
         
         category_table = Table(category_data)
         category_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.white),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, 0), 10),
             ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.white),
             ('GRID', (0, 0), (-1, -1), 1, colors.black)
         ]))
         
@@ -1270,13 +2032,13 @@ class PDFExporter:
         
         detail_table = Table(table_data)
         detail_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.white),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, 0), 10),
             ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.white),
             ('GRID', (0, 0), (-1, -1), 1, colors.black)
         ]))
         

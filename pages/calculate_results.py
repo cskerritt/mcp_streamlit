@@ -161,8 +161,8 @@ def show_summary_tab(summary_stats, cost_schedule):
     with col4:
         st.metric(
             "Projection Period",
-            f"{st.session_state.lcp_data.settings.projection_years:.0f} years",
-            help=f"From {st.session_state.lcp_data.settings.base_year} to {st.session_state.lcp_data.settings.base_year + int(st.session_state.lcp_data.settings.projection_years)}"
+            f"{st.session_state.lcp_data.settings.projection_years:.1f} years",
+            help=f"From {st.session_state.lcp_data.settings.base_year} to {st.session_state.lcp_data.settings.base_year + st.session_state.lcp_data.settings.projection_years:.1f}"
         )
     
     # Additional details
@@ -257,7 +257,7 @@ def show_annual_costs_chart(cost_schedule):
         x=cost_schedule['Year'],
         y=cost_schedule['Total Nominal'],
         name='Nominal Cost',
-        marker_color='lightblue',
+        marker_color='lightgray',
         hovertemplate='<b>Year %{x}</b><br>Nominal Cost: $%{y:,.0f}<extra></extra>'
     ))
     
@@ -267,7 +267,7 @@ def show_annual_costs_chart(cost_schedule):
             x=cost_schedule['Year'],
             y=cost_schedule['Present Value'],
             name='Present Value',
-            marker_color='darkblue',
+            marker_color='black',
             hovertemplate='<b>Year %{x}</b><br>Present Value: $%{y:,.0f}<extra></extra>'
         ))
     
@@ -298,7 +298,7 @@ def show_cumulative_costs_chart(cost_schedule):
         y=cost_schedule_copy['Cumulative Nominal'],
         mode='lines+markers',
         name='Cumulative Nominal',
-        line=dict(color='red', width=3),
+        line=dict(color='black', width=3),
         hovertemplate='<b>Year %{x}</b><br>Cumulative Nominal: $%{y:,.0f}<extra></extra>'
     ))
     
@@ -309,7 +309,7 @@ def show_cumulative_costs_chart(cost_schedule):
             y=cost_schedule_copy['Cumulative PV'],
             mode='lines+markers',
             name='Cumulative Present Value',
-            line=dict(color='blue', width=3),
+            line=dict(color='gray', width=3),
             hovertemplate='<b>Year %{x}</b><br>Cumulative PV: $%{y:,.0f}<extra></extra>'
         ))
     
@@ -336,7 +336,7 @@ def show_cost_comparison_chart(cost_schedule):
         y=cost_schedule['Total Nominal'],
         mode='lines+markers',
         name='Nominal Cost',
-        line=dict(color='red', width=2),
+        line=dict(color='black', width=2),
         hovertemplate='<b>Year %{x}</b><br>Nominal: $%{y:,.0f}<extra></extra>'
     ))
     
@@ -345,7 +345,7 @@ def show_cost_comparison_chart(cost_schedule):
         y=cost_schedule['Present Value'],
         mode='lines+markers',
         name='Present Value',
-        line=dict(color='blue', width=2),
+        line=dict(color='gray', width=2),
         hovertemplate='<b>Year %{x}</b><br>Present Value: $%{y:,.0f}<extra></extra>'
     ))
     
