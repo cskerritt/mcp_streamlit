@@ -244,64 +244,148 @@ class WordExporter:
         doc.add_paragraph()
         doc.add_paragraph()
         
-        # Category breakdown
-        doc.add_heading("Cost Breakdown by Category", level=2)
+        # Detailed Service Category Breakdown
+        doc.add_heading("Detailed Service Breakdown by Category", level=2)
         category_costs = self.calculator.get_cost_by_category()
         
         for table_name, data in category_costs.items():
-            doc.add_heading(table_name, level=3)
-            para = doc.add_paragraph()
-            para.add_run(f"Total Nominal: ${data['table_nominal_total']:,.2f}\n")
+            # Category header with summary
+            doc.add_heading(f"{table_name}", level=3)
             
+            # Category summary paragraph
+            summary_para = doc.add_paragraph()
+            summary_para.add_run("Category Summary: ").bold = True
+            summary_para.add_run(f"This category contains {len(data['services'])} medical service(s) with a total lifetime cost of ")
+            summary_para.add_run(f"${data['table_nominal_total']:,.2f}").bold = True
             if self.lcp.evaluee.discount_calculations:
-                para.add_run(f"Total Present Value: ${data['table_present_value_total']:,.2f}\n")
+                summary_para.add_run(f" (${data['table_present_value_total']:,.2f} in present value)")
+            summary_para.add_run(".")
             
-            para.add_run(f"Number of Services: {len(data['services'])}\n\n")
+            doc.add_paragraph()  # Spacing
             
             if data['services']:
-                para.add_run("Services included:\n").bold = True
-                for service in data['services']:
-                    service_type = 'One-time' if service['is_one_time_cost'] else \
-                                  'Discrete' if service['occurrence_years'] else 'Recurring'
+                # Create detailed service table for this category
+                service_table_headers = [
+                    'Service Name',
+                    'Cost per Unit',
+                    'Frequency\nper Year',
+                    'Service Period',
+                    'Annual\nInflation Rate',
+                    'Total Lifetime Cost'
+                ]
+                
+                if self.lcp.evaluee.discount_calculations:
+                    service_table_headers.append('Present Value\nLifetime Cost')
+                
+                # Create service table
+                service_table = doc.add_table(rows=len(data['services']) + 1, cols=len(service_table_headers))
+                service_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+                service_table.style = 'Table Grid'
+                
+                # Set column widths for service table
+                col_widths = [Inches(2.0), Inches(1.0), Inches(0.8), Inches(1.5), Inches(0.8), Inches(1.3)]
+                if self.lcp.evaluee.discount_calculations:
+                    col_widths.append(Inches(1.3))
+                
+                for i, width in enumerate(col_widths):
+                    if i < len(service_table.columns):
+                        service_table.columns[i].width = width
+                
+                # Header row
+                hdr_cells = service_table.rows[0].cells
+                for idx, header_text in enumerate(service_table_headers):
+                    hdr_cells[idx].text = header_text
+                    paragraph = hdr_cells[idx].paragraphs[0]
+                    run = paragraph.runs[0]
+                    run.bold = True
+                    run.font.size = Pt(9)
+                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    # Cell formatting
+                    hdr_cells[idx].top_margin = Pt(4)
+                    hdr_cells[idx].bottom_margin = Pt(4)
+                    hdr_cells[idx].left_margin = Pt(3)
+                    hdr_cells[idx].right_margin = Pt(3)
+                
+                # Data rows for each service
+                for row_idx, service in enumerate(data['services'], start=1):
+                    row_cells = service_table.rows[row_idx].cells
                     
-                    if service['occurrence_years']:
-                        service_type += f" ({len(service['occurrence_years'])} occurrences)"
-                        years_info = f"Years: {min(service['occurrence_years'])}-{max(service['occurrence_years'])}"
-                    elif service['is_one_time_cost']:
-                        years_info = f"Year: {service['one_time_cost_year']}"
+                    # Determine service period description
+                    if service['is_one_time_cost']:
+                        service_period = f"One-time in {service['one_time_cost_year']}"
+                    elif service['occurrence_years']:
+                        years = service['occurrence_years']
+                        if len(years) == 1:
+                            service_period = f"Year {years[0]} only"
+                        else:
+                            service_period = f"Years {min(years)}-{max(years)}\n({len(years)} specific years)"
                     else:
-                        start_yr = service['start_year'] if service['start_year'] else 'N/A'
-                        end_yr = service['end_year'] if service['end_year'] else 'N/A'
-                        years_info = f"Years: {start_yr}-{end_yr}"
+                        start_yr = service['start_year'] if service['start_year'] else 'Start of plan'
+                        end_yr = service['end_year'] if service['end_year'] else 'End of plan'
+                        service_period = f"{start_yr} to {end_yr}"
                     
-                    para.add_run(f"  • {service['name']}: ${service['unit_cost']:,.2f} "
-                               f"({service['frequency_per_year']:.1f}x/year, {service['inflation_rate']:.1f}% inflation, "
-                               f"{service_type}, {years_info})\n"
-                               f"    Total Nominal: ${service['nominal_total']:,.2f}")
+                    # Fill in service data
+                    service_data = [
+                        service['name'],
+                        f"${service['unit_cost']:,.2f}",
+                        f"{service['frequency_per_year']:.1f}x",
+                        service_period,
+                        f"{service['inflation_rate']:.1f}%",
+                        f"${service['nominal_total']:,.2f}"
+                    ]
                     
                     if self.lcp.evaluee.discount_calculations:
-                        para.add_run(f", Total PV: ${service['present_value_total']:,.2f}")
+                        service_data.append(f"${service['present_value_total']:,.2f}")
                     
-                    para.add_run("\n")
-            
+                    for col_idx, cell_value in enumerate(service_data):
+                        row_cells[col_idx].text = cell_value
+                        
+                        # Cell formatting
+                        row_cells[col_idx].top_margin = Pt(3)
+                        row_cells[col_idx].bottom_margin = Pt(3)
+                        row_cells[col_idx].left_margin = Pt(3)
+                        row_cells[col_idx].right_margin = Pt(3)
+                        
+                        # Text formatting
+                        paragraph = row_cells[col_idx].paragraphs[0]
+                        if paragraph.runs:
+                            paragraph.runs[0].font.size = Pt(8)
+                        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                
+                # Add explanatory text after each service table
+                doc.add_paragraph()
+                explanation_para = doc.add_paragraph()
+                explanation_para.add_run("What this means: ").bold = True
+                explanation_para.add_run("Each service listed above will be provided according to the specified frequency and time period. ")
+                explanation_para.add_run("The costs shown include projected inflation adjustments over the entire care period. ")
+                if self.lcp.evaluee.discount_calculations:
+                    explanation_para.add_run("Present value costs show what these future expenses are worth in today's dollars using a ")
+                    explanation_para.add_run(f"{self.lcp.settings.discount_rate:.1%} discount rate").bold = True
+                    explanation_para.add_run(".")
+                
             # Add spacing between categories
             doc.add_paragraph()
-            doc.add_paragraph("─" * 80)  # Visual separator
-            doc.add_paragraph()
+            doc.add_page_break() if len(category_costs) > 1 else doc.add_paragraph()
         
-        # Detailed cost schedule table
+        # Annual Cost Schedule with Category Breakdown
         doc.add_page_break()
-        doc.add_heading("Annual Cost Schedule", level=2)
+        doc.add_heading("Annual Cost Schedule Summary", level=2)
+        
+        # Add explanation paragraph
+        explanation_para = doc.add_paragraph()
+        explanation_para.add_run("Understanding Your Annual Costs: ").bold = True
+        explanation_para.add_run("The table below shows the total medical costs for each year of the life care plan. ")
+        explanation_para.add_run("These costs represent all services combined and include inflation adjustments. ")
+        if self.lcp.evaluee.discount_calculations:
+            explanation_para.add_run("The present value column shows what future costs are worth in today's dollars.")
+        
+        doc.add_paragraph()  # Spacing
 
         df = self.calculator.build_cost_schedule()
-
-        # Add spacing before table
-        doc.add_paragraph()
         
-        # Create table following Excel/PDF export format - simplified columns
-        # Determine columns based on available data (matching PDF export logic)
+        # Create simplified annual summary table
         if "Present Value" in df.columns:
-            table_columns = ['Year', 'Evaluee Age', 'Annual Cost (Nominal)', 'Annual Cost (Present Value)']
+            table_columns = ['Year', 'Evaluee Age', 'Total Annual Cost', 'Present Value Cost']
             table_data = []
             for _, row in df.iterrows():
                 table_data.append([
@@ -311,7 +395,7 @@ class WordExporter:
                     f"${row['Present Value']:,.0f}"
                 ])
         else:
-            table_columns = ['Year', 'Evaluee Age', 'Annual Medical Cost (Nominal)']
+            table_columns = ['Year', 'Evaluee Age', 'Total Annual Cost']
             table_data = []
             for _, row in df.iterrows():
                 table_data.append([
@@ -320,54 +404,198 @@ class WordExporter:
                     f"${row['Total Nominal']:,.0f}"
                 ])
         
-        # Create table with header + data rows
-        table = doc.add_table(rows=len(table_data) + 1, cols=len(table_columns))
-        table.alignment = WD_TABLE_ALIGNMENT.CENTER
-        table.style = 'Table Grid'
+        # Create summary table
+        summary_table = doc.add_table(rows=len(table_data) + 1, cols=len(table_columns))
+        summary_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        summary_table.style = 'Table Grid'
         
-        # Set column widths for balanced layout
+        # Set column widths
         year_width = Inches(1.0)
         age_width = Inches(1.2) 
-        cost_width = Inches(2.2)
+        cost_width = Inches(1.8)
         
-        table.columns[0].width = year_width  # Year
-        table.columns[1].width = age_width   # Age
-        for i in range(2, len(table_columns)):  # Cost columns
-            table.columns[i].width = cost_width
+        summary_table.columns[0].width = year_width
+        summary_table.columns[1].width = age_width
+        for i in range(2, len(table_columns)):
+            summary_table.columns[i].width = cost_width
 
-        # Header row formatting
-        hdr_cells = table.rows[0].cells
+        # Header row
+        hdr_cells = summary_table.rows[0].cells
         for idx, header_text in enumerate(table_columns):
             hdr_cells[idx].text = header_text
             paragraph = hdr_cells[idx].paragraphs[0]
             run = paragraph.runs[0]
             run.bold = True
-            run.font.size = Pt(11)
+            run.font.size = Pt(10)
             paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            # Cell formatting
-            hdr_cells[idx].top_margin = Pt(6)
-            hdr_cells[idx].bottom_margin = Pt(6)
-            hdr_cells[idx].left_margin = Pt(4)
-            hdr_cells[idx].right_margin = Pt(4)
+            hdr_cells[idx].top_margin = Pt(4)
+            hdr_cells[idx].bottom_margin = Pt(4)
+            hdr_cells[idx].left_margin = Pt(3)
+            hdr_cells[idx].right_margin = Pt(3)
 
         # Data rows
         for row_idx, row_data in enumerate(table_data, start=1):
-            row_cells = table.rows[row_idx].cells
+            row_cells = summary_table.rows[row_idx].cells
             
             for col_idx, cell_value in enumerate(row_data):
                 row_cells[col_idx].text = cell_value
+                row_cells[col_idx].top_margin = Pt(3)
+                row_cells[col_idx].bottom_margin = Pt(3)
+                row_cells[col_idx].left_margin = Pt(3)
+                row_cells[col_idx].right_margin = Pt(3)
                 
-                # Cell formatting
-                row_cells[col_idx].top_margin = Pt(4)
-                row_cells[col_idx].bottom_margin = Pt(4)
-                row_cells[col_idx].left_margin = Pt(4)
-                row_cells[col_idx].right_margin = Pt(4)
-                
-                # Text formatting
                 paragraph = row_cells[col_idx].paragraphs[0]
                 if paragraph.runs:
-                    paragraph.runs[0].font.size = Pt(10)
+                    paragraph.runs[0].font.size = Pt(9)
                 paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        # Add comprehensive year-by-year breakdown by category
+        doc.add_paragraph()
+        doc.add_paragraph()
+        doc.add_heading("Detailed Year-by-Year Breakdown by Service Category", level=2)
+        
+        # Add explanation
+        detailed_explanation = doc.add_paragraph()
+        detailed_explanation.add_run("Year-by-Year Service Details: ").bold = True
+        detailed_explanation.add_run("The following section shows exactly which services are provided each year and their individual costs. ")
+        detailed_explanation.add_run("This detailed breakdown helps you understand what drives the costs in each year of the plan.")
+        
+        doc.add_paragraph()
+        
+        # Get detailed year-by-year data
+        category_costs = self.calculator.get_cost_by_category()
+        years = list(range(self.lcp.settings.base_year, self.lcp.settings.base_year + self.lcp.settings.projection_years))
+        
+        # Create a comprehensive table showing services by year
+        for year in years:
+            evaluee_age = self.lcp.evaluee.current_age + (year - self.lcp.settings.base_year)
+            doc.add_heading(f"Year {year} (Evaluee Age: {evaluee_age})", level=3)
+            
+            year_services = []
+            year_total = 0
+            year_total_pv = 0
+            
+            # Collect all services for this year across all categories
+            for table_name, data in category_costs.items():
+                for service in data['services']:
+                    # Check if service applies to this year
+                    service_applies = False
+                    service_cost = 0
+                    service_cost_pv = 0
+                    
+                    if service['is_one_time_cost']:
+                        if service['one_time_cost_year'] == year:
+                            service_applies = True
+                            service_cost = service['unit_cost']
+                    elif service['occurrence_years']:
+                        if year in service['occurrence_years']:
+                            service_applies = True
+                            service_cost = service['unit_cost'] * service['frequency_per_year']
+                    else:
+                        start_year = service['start_year'] if service['start_year'] else self.lcp.settings.base_year
+                        end_year = service['end_year'] if service['end_year'] else (self.lcp.settings.base_year + self.lcp.settings.projection_years - 1)
+                        if start_year <= year <= end_year:
+                            service_applies = True
+                            service_cost = service['unit_cost'] * service['frequency_per_year']
+                    
+                    if service_applies:
+                        # Apply inflation to get cost for this specific year
+                        years_from_base = year - self.lcp.settings.base_year
+                        inflated_cost = service_cost * ((1 + service['inflation_rate'] / 100) ** years_from_base)
+                        
+                        # Calculate present value if needed
+                        if self.lcp.evaluee.discount_calculations:
+                            service_cost_pv = inflated_cost / ((1 + self.lcp.settings.discount_rate) ** years_from_base)
+                        
+                        year_services.append({
+                            'category': table_name,
+                            'name': service['name'],
+                            'frequency': service['frequency_per_year'] if not service['is_one_time_cost'] else 1,
+                            'unit_cost': service['unit_cost'],
+                            'inflated_cost': inflated_cost,
+                            'present_value_cost': service_cost_pv,
+                            'is_one_time': service['is_one_time_cost']
+                        })
+                        
+                        year_total += inflated_cost
+                        year_total_pv += service_cost_pv
+            
+            if year_services:
+                # Create table for this year's services
+                year_table_headers = ['Service Category', 'Service Name', 'Frequency', 'Cost This Year']
+                if self.lcp.evaluee.discount_calculations:
+                    year_table_headers.append('Present Value Cost')
+                
+                year_table = doc.add_table(rows=len(year_services) + 2, cols=len(year_table_headers))  # +2 for header and total
+                year_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+                year_table.style = 'Table Grid'
+                
+                # Set column widths
+                year_col_widths = [Inches(1.8), Inches(2.2), Inches(0.8), Inches(1.2)]
+                if self.lcp.evaluee.discount_calculations:
+                    year_col_widths.append(Inches(1.2))
+                
+                for i, width in enumerate(year_col_widths):
+                    if i < len(year_table.columns):
+                        year_table.columns[i].width = width
+                
+                # Headers
+                hdr_cells = year_table.rows[0].cells
+                for idx, header_text in enumerate(year_table_headers):
+                    hdr_cells[idx].text = header_text
+                    paragraph = hdr_cells[idx].paragraphs[0]
+                    run = paragraph.runs[0]
+                    run.bold = True
+                    run.font.size = Pt(9)
+                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                
+                # Service rows
+                for row_idx, service in enumerate(year_services, start=1):
+                    row_cells = year_table.rows[row_idx].cells
+                    
+                    frequency_text = "One-time" if service['is_one_time'] else f"{service['frequency']:.1f}x/year"
+                    
+                    service_row_data = [
+                        service['category'],
+                        service['name'],
+                        frequency_text,
+                        f"${service['inflated_cost']:,.0f}"
+                    ]
+                    
+                    if self.lcp.evaluee.discount_calculations:
+                        service_row_data.append(f"${service['present_value_cost']:,.0f}")
+                    
+                    for col_idx, cell_value in enumerate(service_row_data):
+                        row_cells[col_idx].text = cell_value
+                        paragraph = row_cells[col_idx].paragraphs[0]
+                        if paragraph.runs:
+                            paragraph.runs[0].font.size = Pt(8)
+                        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                
+                # Total row
+                total_row_cells = year_table.rows[-1].cells
+                total_row_cells[0].text = "YEAR TOTAL"
+                total_row_cells[1].text = ""
+                total_row_cells[2].text = ""
+                total_row_cells[3].text = f"${year_total:,.0f}"
+                
+                if self.lcp.evaluee.discount_calculations:
+                    total_row_cells[4].text = f"${year_total_pv:,.0f}"
+                
+                # Format total row
+                for cell in total_row_cells:
+                    if cell.text:
+                        paragraph = cell.paragraphs[0]
+                        run = paragraph.runs[0] if paragraph.runs else paragraph.add_run(cell.text)
+                        run.bold = True
+                        run.font.size = Pt(9)
+                        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            else:
+                # No services for this year
+                no_services_para = doc.add_paragraph()
+                no_services_para.add_run("No medical services scheduled for this year.").italic = True
+            
+            doc.add_paragraph()  # Spacing between years
         
         # Add spacing after table
         doc.add_paragraph()
