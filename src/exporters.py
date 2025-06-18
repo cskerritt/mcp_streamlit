@@ -298,68 +298,75 @@ class WordExporter:
         # Add spacing before table
         doc.add_paragraph()
         
-        # Create a vertical table layout - each year is a row with data flowing down
-        # Create table with rows for each year + header row
-        table = doc.add_table(rows=len(df) + 1, cols=len(df.columns))
+        # Create table following Excel/PDF export format - simplified columns
+        # Determine columns based on available data (matching PDF export logic)
+        if "Present Value" in df.columns:
+            table_columns = ['Year', 'Evaluee Age', 'Annual Cost (Nominal)', 'Annual Cost (Present Value)']
+            table_data = []
+            for _, row in df.iterrows():
+                table_data.append([
+                    str(int(row['Year'])),
+                    str(int(row['Age'])),
+                    f"${row['Total Nominal']:,.0f}",
+                    f"${row['Present Value']:,.0f}"
+                ])
+        else:
+            table_columns = ['Year', 'Evaluee Age', 'Annual Medical Cost (Nominal)']
+            table_data = []
+            for _, row in df.iterrows():
+                table_data.append([
+                    str(int(row['Year'])),
+                    str(int(row['Age'])),
+                    f"${row['Total Nominal']:,.0f}"
+                ])
+        
+        # Create table with header + data rows
+        table = doc.add_table(rows=len(table_data) + 1, cols=len(table_columns))
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
         table.style = 'Table Grid'
         
-        # Set column widths for vertical layout
-        col_width = Inches(1.5)  # Equal width columns for better balance
-        for col in table.columns:
-            col.width = col_width
+        # Set column widths for balanced layout
+        year_width = Inches(1.0)
+        age_width = Inches(1.2) 
+        cost_width = Inches(2.2)
+        
+        table.columns[0].width = year_width  # Year
+        table.columns[1].width = age_width   # Age
+        for i in range(2, len(table_columns)):  # Cost columns
+            table.columns[i].width = cost_width
 
-        # Improved headers for better readability
-        improved_headers = {
-            'Year': 'Year',
-            'Age': 'Evaluee Age',
-            'Total Nominal': 'Annual Cost\n(Nominal)',
-            'Present Value': 'Annual Cost\n(Present Value)',
-            'Cumulative Nominal': 'Cumulative Cost\n(Nominal)',
-            'Cumulative PV': 'Cumulative Cost\n(Present Value)'
-        }
-
-        # Header row with improved formatting
+        # Header row formatting
         hdr_cells = table.rows[0].cells
-        for idx, col in enumerate(df.columns):
-            header_text = improved_headers.get(col, col)
+        for idx, header_text in enumerate(table_columns):
             hdr_cells[idx].text = header_text
             paragraph = hdr_cells[idx].paragraphs[0]
             run = paragraph.runs[0]
             run.bold = True
-            run.font.size = Pt(10)
+            run.font.size = Pt(11)
             paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            # Add cell formatting
-            hdr_cells[idx].top_margin = Pt(4)
-            hdr_cells[idx].bottom_margin = Pt(4)
-            hdr_cells[idx].left_margin = Pt(3)
-            hdr_cells[idx].right_margin = Pt(3)
+            # Cell formatting
+            hdr_cells[idx].top_margin = Pt(6)
+            hdr_cells[idx].bottom_margin = Pt(6)
+            hdr_cells[idx].left_margin = Pt(4)
+            hdr_cells[idx].right_margin = Pt(4)
 
-        # Data rows - each row represents one year
-        for row_idx, (_, data_row) in enumerate(df.iterrows(), start=1):
+        # Data rows
+        for row_idx, row_data in enumerate(table_data, start=1):
             row_cells = table.rows[row_idx].cells
             
-            for col_idx, col in enumerate(df.columns):
-                value = data_row[col]
+            for col_idx, cell_value in enumerate(row_data):
+                row_cells[col_idx].text = cell_value
                 
-                # Format the value appropriately
-                if isinstance(value, (int, float)) and col not in ['Year', 'Age']:
-                    formatted_value = f"${value:,.0f}"
-                else:
-                    formatted_value = str(int(value) if isinstance(value, float) and value.is_integer() else value)
+                # Cell formatting
+                row_cells[col_idx].top_margin = Pt(4)
+                row_cells[col_idx].bottom_margin = Pt(4)
+                row_cells[col_idx].left_margin = Pt(4)
+                row_cells[col_idx].right_margin = Pt(4)
                 
-                row_cells[col_idx].text = formatted_value
-                
-                # Apply cell formatting
-                row_cells[col_idx].top_margin = Pt(3)
-                row_cells[col_idx].bottom_margin = Pt(3)
-                row_cells[col_idx].left_margin = Pt(3)
-                row_cells[col_idx].right_margin = Pt(3)
-                
-                # Format text
+                # Text formatting
                 paragraph = row_cells[col_idx].paragraphs[0]
                 if paragraph.runs:
-                    paragraph.runs[0].font.size = Pt(9)
+                    paragraph.runs[0].font.size = Pt(10)
                 paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
         # Add spacing after table
