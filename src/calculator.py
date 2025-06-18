@@ -146,10 +146,15 @@ class CostCalculator:
                 "present_value_total": float(table_pv) if self.lcp.evaluee.discount_calculations else 0
             }
         
+        # Calculate correct average using actual number of years with costs
+        actual_years_with_costs = len(df[df["Total Nominal"] > 0]) if len(df) > 0 else int(self.lcp.settings.projection_years)
+        average_annual_cost = total_nominal / actual_years_with_costs if actual_years_with_costs > 0 else 0
+        
         return {
             "total_nominal_cost": total_nominal,
             "total_present_value": total_present_value,
-            "average_annual_cost": total_nominal / self.lcp.settings.projection_years,
+            "average_annual_cost": average_annual_cost,
+            "actual_years_with_costs": actual_years_with_costs,
             "table_statistics": table_stats,
             "projection_period": f"{self.lcp.settings.base_year}-{self.lcp.settings.base_year + int(self.lcp.settings.projection_years) - 1}",
             "discount_rate": self.lcp.settings.discount_rate * 100

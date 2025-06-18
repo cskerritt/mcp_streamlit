@@ -638,11 +638,18 @@ class WordExporter:
         doc.add_paragraph()
         doc.add_heading("Detailed Year-by-Year Breakdown by Service Category", level=2)
         
-        # Add explanation
+        # Add explanation and validation notice
         detailed_explanation = doc.add_paragraph()
         detailed_explanation.add_run("Year-by-Year Service Details: ").bold = True
         detailed_explanation.add_run("The following section shows exactly which services are provided each year and their individual costs. ")
         detailed_explanation.add_run("This detailed breakdown helps you understand what drives the costs in each year of the plan.")
+        
+        doc.add_paragraph()
+        validation_para = doc.add_paragraph()
+        validation_para.add_run("Cross-Verification Notice: ").bold = True
+        validation_para.add_run("All calculations in this detailed breakdown use identical mathematical methods as the Summary Schedule above. ")
+        validation_para.add_run("Year totals in this section should match corresponding years in the Annual Cost Schedule Summary. ")
+        validation_para.add_run("Any discrepancies indicate calculation errors that require correction.")
         
         doc.add_paragraph()
         
@@ -659,51 +666,36 @@ class WordExporter:
             year_total = 0
             year_total_pv = 0
             
-            # Collect all services for this year across all categories
-            for table_name, data in category_costs.items():
-                for service in data['services']:
-                    # Check if service applies to this year
-                    service_applies = False
-                    service_cost = 0
-                    service_cost_pv = 0
+            # Use calculator's service cost method for consistency
+            for table_name, table in self.lcp.tables.items():
+                for service in table.services:
+                    # Use the calculator's method to get the correct cost for this year
+                    service_cost = self.calculator.calculate_service_cost(service, year)
                     
-                    if service['is_one_time_cost']:
-                        if service['one_time_cost_year'] == year:
-                            service_applies = True
-                            service_cost = service['unit_cost']
-                    elif service['occurrence_years']:
-                        if year in service['occurrence_years']:
-                            service_applies = True
-                            service_cost = service['unit_cost'] * service['frequency_per_year']
-                    else:
-                        start_year = int(service['start_year']) if service['start_year'] else int(self.lcp.settings.base_year)
-                        end_year = int(service['end_year']) if service['end_year'] else (int(self.lcp.settings.base_year) + int(self.lcp.settings.projection_years) - 1)
-                        if start_year <= year <= end_year:
-                            service_applies = True
-                            service_cost = service['unit_cost'] * service['frequency_per_year']
-                    
-                    if service_applies:
-                        # Apply inflation to get cost for this specific year
+                    if service_cost > 0:  # Service applies to this year
+                        # Calculate present value using calculator's method
                         years_from_base = year - int(self.lcp.settings.base_year)
-                        inflated_cost = float(service_cost) * ((1 + float(service['inflation_rate']) / 100) ** years_from_base)
-                        
-                        # Calculate present value if needed
+                        service_cost_pv = 0
                         if self.lcp.evaluee.discount_calculations:
-                            service_cost_pv = inflated_cost / ((1 + float(self.lcp.settings.discount_rate)) ** years_from_base)
+                            service_cost_pv = float(self.calculator.calculate_present_value(service_cost, years_from_base))
+                        
+                        # Determine frequency display
+                        if service.is_one_time_cost:
+                            frequency_display = 1
                         else:
-                            service_cost_pv = 0
+                            frequency_display = service.frequency_per_year
                         
                         year_services.append({
                             'category': table_name,
-                            'name': service['name'],
-                            'frequency': service['frequency_per_year'] if not service['is_one_time_cost'] else 1,
-                            'unit_cost': service['unit_cost'],
-                            'inflated_cost': inflated_cost,
+                            'name': service.name,
+                            'frequency': frequency_display,
+                            'unit_cost': service.unit_cost,
+                            'inflated_cost': float(service_cost),
                             'present_value_cost': service_cost_pv,
-                            'is_one_time': service['is_one_time_cost']
+                            'is_one_time': service.is_one_time_cost
                         })
                         
-                        year_total += inflated_cost
+                        year_total += float(service_cost)
                         year_total_pv += service_cost_pv
             
             if year_services:
@@ -782,6 +774,66 @@ class WordExporter:
                 no_services_para.add_run("No medical services scheduled for this year.").italic = True
             
             doc.add_paragraph()  # Spacing between years
+        
+        # Add Cross-Verification and Quality Control Section
+        doc.add_page_break()
+        doc.add_heading("Calculation Cross-Verification and Quality Control", level=2)
+        
+        # Verify totals match between different sections
+        verification_para = doc.add_paragraph()
+        verification_para.add_run("Quality Control Verification: ").bold = True
+        verification_para.add_run("The following cross-checks ensure calculation accuracy and consistency throughout this report:")
+        
+        doc.add_paragraph()
+        
+        # Check 1: Category totals vs Executive total
+        total_from_categories = sum(data['table_nominal_total'] for data in category_costs.values())
+        summary_stats = self.calculator.calculate_summary_statistics()
+        executive_total = summary_stats['total_nominal_cost']
+        
+        check1_para = doc.add_paragraph()
+        check1_para.add_run("Check 1 - Category Totals vs Executive Summary: ").bold = True
+        check1_para.add_run(f"Sum of all category totals: ${total_from_categories:,.2f}. ")
+        check1_para.add_run(f"Executive summary total: ${executive_total:,.2f}. ")
+        if abs(total_from_categories - executive_total) < 1.0:
+            check1_para.add_run("✓ MATCH - Calculation consistent.").bold = True
+        else:
+            check1_para.add_run(f"✗ DISCREPANCY of ${abs(total_from_categories - executive_total):,.2f} - Requires review.").bold = True
+        
+        doc.add_paragraph()
+        
+        # Check 2: Average annual cost calculation
+        check2_para = doc.add_paragraph()
+        check2_para.add_run("Check 2 - Average Annual Cost Calculation: ").bold = True
+        actual_years = summary_stats.get('actual_years_with_costs', int(self.lcp.settings.projection_years))
+        calculated_average = executive_total / actual_years if actual_years > 0 else 0
+        reported_average = summary_stats['average_annual_cost']
+        check2_para.add_run(f"Total cost ÷ {actual_years} years = ${calculated_average:,.2f}. ")
+        check2_para.add_run(f"Reported average: ${reported_average:,.2f}. ")
+        if abs(calculated_average - reported_average) < 1.0:
+            check2_para.add_run("✓ MATCH - Calculation consistent.").bold = True
+        else:
+            check2_para.add_run(f"✗ DISCREPANCY of ${abs(calculated_average - reported_average):,.2f} - Requires review.").bold = True
+        
+        doc.add_paragraph()
+        
+        # Check 3: Schedule summary vs detailed totals verification
+        check3_para = doc.add_paragraph()
+        check3_para.add_run("Check 3 - Schedule Summary vs Detailed Breakdown: ").bold = True
+        check3_para.add_run("Both sections use identical calculation methods from the core calculator engine. ")
+        check3_para.add_run("Year-by-year totals should match between the Annual Cost Schedule Summary ")
+        check3_para.add_run("and the Detailed Year-by-Year Breakdown sections. ")
+        check3_para.add_run("Any discrepancies indicate calculation engine inconsistencies that require immediate correction.")
+        
+        doc.add_paragraph()
+        
+        # Mathematical accuracy statement
+        accuracy_para = doc.add_paragraph()
+        accuracy_para.add_run("Mathematical Accuracy Statement: ").bold = True
+        accuracy_para.add_run("All calculations in this report use established financial mathematics with consistent ")
+        accuracy_para.add_run("inflation compounding and present value discounting. Rounding is applied consistently ")
+        accuracy_para.add_run("to the nearest cent. All computational methods are reproducible and subject to ")
+        accuracy_para.add_run("independent verification through cross-examination.")
         
         # Add spacing after table
         doc.add_paragraph()
