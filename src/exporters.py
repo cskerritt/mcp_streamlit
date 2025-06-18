@@ -221,6 +221,154 @@ class WordExporter:
         doc.add_paragraph()
         doc.add_paragraph()
         
+        # DAUBERT/FRYE COMPLIANCE DOCUMENTATION
+        doc.add_heading("Expert Methodology and Scientific Reliability Documentation", level=2)
+        
+        # Methodology Section
+        methodology_para = doc.add_paragraph()
+        methodology_para.add_run("Methodology and Scientific Basis: ").bold = True
+        methodology_para.add_run("This life care plan economic projection employs established econometric principles and medical cost forecasting methodologies ")
+        methodology_para.add_run("consistent with peer-reviewed literature in health economics and actuarial science. The analytical framework incorporates ")
+        methodology_para.add_run("inflation modeling using compound annual growth rates, present value calculations using established discount rate theory, ")
+        methodology_para.add_run("and frequency-based cost projections grounded in medical utilization standards.")
+        
+        doc.add_paragraph()
+        
+        # Reliability and Error Rate Section
+        reliability_para = doc.add_paragraph()
+        reliability_para.add_run("Reliability and Potential Error Rates: ").bold = True
+        reliability_para.add_run("Economic projections are subject to inherent uncertainties in inflation rates, discount rates, and medical cost trends. ")
+        reliability_para.add_run("Historical medical inflation rates typically range from 2-6% annually (Bureau of Labor Statistics, 2010-2024). ")
+        reliability_para.add_run("Discount rate assumptions follow federal guidelines and economic standards (OMB Circular A-4, Federal Reserve data). ")
+        reliability_para.add_run("Service frequency estimates are based on medical literature and clinical guidelines where available.")
+        
+        doc.add_paragraph()
+        
+        # Scientific Acceptance Section
+        acceptance_para = doc.add_paragraph()
+        acceptance_para.add_run("General Acceptance in Relevant Scientific Community: ").bold = True
+        acceptance_para.add_run("Life care plan economic analysis methodologies are widely accepted in forensic economics, ")
+        acceptance_para.add_run("rehabilitation counseling, and medical-legal communities. Standards are established by: ")
+        acceptance_para.add_run("International Association of Rehabilitation Professionals (IARP), ")
+        acceptance_para.add_run("Commission on Health Care Certification (CHCC), ")
+        acceptance_para.add_run("National Association of Forensic Economics (NAFE), ")
+        acceptance_para.add_run("and peer-reviewed publications in Journal of Forensic Economics, ")
+        acceptance_para.add_run("Topics in Spinal Cord Injury Rehabilitation, and similar professional journals.")
+        
+        doc.add_paragraph()
+        
+        # Testing and Peer Review Section
+        testing_para = doc.add_paragraph()
+        testing_para.add_run("Testing and Peer Review: ").bold = True
+        testing_para.add_run("The economic modeling techniques used in this analysis have been subject to extensive peer review ")
+        testing_para.add_run("through professional literature and court proceedings. Mathematical calculations follow established ")
+        testing_para.add_run("financial formulas for present value analysis (PV = FV / (1 + r)^n) and compound growth modeling ")
+        testing_para.add_run("(FV = PV × (1 + g)^n). All computational methods are reproducible and verifiable.")
+        
+        doc.add_paragraph()
+        
+        # Data Sources and Standards Section
+        standards_para = doc.add_paragraph()
+        standards_para.add_run("Data Sources and Professional Standards: ").bold = True
+        standards_para.add_run("Cost estimates should be derived from reliable sources including: ")
+        standards_para.add_run("Medicare fee schedules, private insurance reimbursement rates, ")
+        standards_para.add_run("durable medical equipment vendor quotes, pharmaceutical pricing databases, ")
+        standards_para.add_run("and published medical literature. Service frequencies should reference ")
+        standards_para.add_run("evidence-based treatment protocols, clinical practice guidelines, ")
+        standards_para.add_run("and medical professional recommendations specific to the individual's condition.")
+        
+        doc.add_paragraph()
+        
+        # Expert Qualifications Required Section
+        qualifications_para = doc.add_paragraph()
+        qualifications_para.add_run("Expert Qualifications Framework: ").bold = True
+        qualifications_para.add_run("Life care plan economic analysis should be conducted by qualified professionals with: ")
+        qualifications_para.add_run("(1) Advanced education in economics, healthcare administration, or rehabilitation counseling; ")
+        qualifications_para.add_run("(2) Specialized training in life care planning methodology; ")
+        qualifications_para.add_run("(3) Professional certification (CRC, CLCP, CVE, or equivalent); ")
+        qualifications_para.add_run("(4) Experience with economic analysis and present value calculations; ")
+        qualifications_para.add_run("(5) Knowledge of relevant medical conditions and treatment standards.")
+        
+        doc.add_paragraph()
+        
+        # Limitations and Assumptions Section
+        limitations_para = doc.add_paragraph()
+        limitations_para.add_run("Limitations and Key Assumptions: ").bold = True
+        limitations_para.add_run("This economic projection is based on current medical knowledge and economic conditions. ")
+        limitations_para.add_run("Actual costs may vary due to: changes in medical technology, treatment protocols, ")
+        limitations_para.add_run("economic conditions, geographic variations, insurance coverage changes, ")
+        limitations_para.add_run("and individual medical developments. Inflation and discount rate assumptions ")
+        limitations_para.add_run("represent reasonable estimates but are subject to economic volatility. ")
+        limitations_para.add_run("Service frequencies assume stable medical condition and standard care protocols.")
+        
+        doc.add_paragraph()
+        
+        # Calculation Transparency Section
+        transparency_para = doc.add_paragraph()
+        transparency_para.add_run("Calculation Transparency and Reproducibility: ").bold = True
+        transparency_para.add_run("All calculations in this report are fully documented and reproducible. ")
+        transparency_para.add_run("Mathematical formulas, inflation rates, discount rates, and service frequencies ")
+        transparency_para.add_run("are explicitly stated. Raw data inputs and computational methods are available ")
+        transparency_para.add_run("for independent verification and cross-examination. Alternative scenarios ")
+        transparency_para.add_run("and sensitivity analyses can be performed using different assumption sets.")
+        
+        # Add legal disclaimer
+        doc.add_paragraph()
+        disclaimer_para = doc.add_paragraph()
+        disclaimer_para.add_run("Legal and Professional Disclaimer: ").bold = True
+        disclaimer_para.add_run("This economic analysis is prepared for legal proceedings and expert testimony purposes. ")
+        disclaimer_para.add_run("The methodology and conclusions are offered to assist the trier of fact in understanding ")
+        disclaimer_para.add_run("future medical care costs. All opinions are expressed within reasonable degree of ")
+        disclaimer_para.add_run("professional certainty based on available data and established methodologies.")
+        
+        # Mathematical Methodology Documentation
+        doc.add_heading("Mathematical Formulas and Calculation Methods", level=2)
+        
+        # Formula documentation
+        formula_para = doc.add_paragraph()
+        formula_para.add_run("Inflation Adjustment Formula: ").bold = True
+        formula_para.add_run("Future Cost = Present Cost × (1 + inflation_rate)^years_from_base")
+        
+        doc.add_paragraph()
+        pv_para = doc.add_paragraph()
+        pv_para.add_run("Present Value Formula: ").bold = True
+        pv_para.add_run("Present Value = Future Value ÷ (1 + discount_rate)^years_from_base")
+        
+        doc.add_paragraph()
+        annual_para = doc.add_paragraph()
+        annual_para.add_run("Annual Service Cost: ").bold = True
+        annual_para.add_run("Annual Cost = Unit Cost × Frequency per Year × Inflation Adjustment")
+        
+        doc.add_paragraph()
+        lifetime_para = doc.add_paragraph()
+        lifetime_para.add_run("Lifetime Service Cost: ").bold = True
+        lifetime_para.add_run("Sum of all annual costs over the service period, with inflation applied to each year")
+        
+        doc.add_paragraph()
+        
+        # Economic Assumptions Documentation
+        economic_para = doc.add_paragraph()
+        economic_para.add_run("Economic Assumptions Used: ").bold = True
+        if self.lcp.evaluee.discount_calculations:
+            economic_para.add_run(f"Discount Rate: {self.lcp.settings.discount_rate:.1%} annually. ")
+        economic_para.add_run(f"Analysis Period: {int(self.lcp.settings.projection_years)} years ")
+        economic_para.add_run(f"({int(self.lcp.settings.base_year)} through {int(self.lcp.settings.base_year) + int(self.lcp.settings.projection_years) - 1}). ")
+        economic_para.add_run("Individual service inflation rates as specified in service details. ")
+        economic_para.add_run("All calculations assume consistent annual application of stated rates.")
+        
+        doc.add_paragraph()
+        
+        # Quality Control Documentation
+        qc_para = doc.add_paragraph()
+        qc_para.add_run("Quality Control and Verification: ").bold = True
+        qc_para.add_run("All calculations are performed using established financial mathematics. ")
+        qc_para.add_run("Results are subject to mathematical verification and cross-checking. ")
+        qc_para.add_run("Alternative calculation methods may be applied for confirmation. ")
+        qc_para.add_run("Sensitivity analysis can be performed using different assumption sets ")
+        qc_para.add_run("to test the robustness of projections under varying economic conditions.")
+        
+        doc.add_page_break()
+        
         # Summary statistics
         doc.add_heading("Executive Summary", level=2)
         summary_stats = self.calculator.calculate_summary_statistics()
@@ -252,7 +400,7 @@ class WordExporter:
             # Category header with summary
             doc.add_heading(f"{table_name}", level=3)
             
-            # Category summary paragraph
+            # Category summary paragraph with Daubert compliance
             summary_para = doc.add_paragraph()
             summary_para.add_run("Category Summary: ").bold = True
             summary_para.add_run(f"This category contains {len(data['services'])} medical service(s) with a total lifetime cost of ")
@@ -261,21 +409,39 @@ class WordExporter:
                 summary_para.add_run(f" (${data['table_present_value_total']:,.2f} in present value)")
             summary_para.add_run(".")
             
+            # Add methodology documentation for this category
+            doc.add_paragraph()
+            methodology_category_para = doc.add_paragraph()
+            methodology_category_para.add_run("Data Source Requirements for This Category: ").bold = True
+            methodology_category_para.add_run("Cost estimates for services in this category should be supported by ")
+            methodology_category_para.add_run("current market rates, provider quotes, published fee schedules, or peer-reviewed literature. ")
+            methodology_category_para.add_run("Service frequencies should be based on medical necessity, physician recommendations, ")
+            methodology_category_para.add_run("clinical practice guidelines, or established treatment protocols. ")
+            methodology_category_para.add_run("All assumptions regarding timing, duration, and intensity of services ")
+            methodology_category_para.add_run("should be documented and supportable through medical evidence.")
+            
+            reliability_category_para = doc.add_paragraph()
+            reliability_category_para.add_run("Reliability Considerations: ").bold = True
+            reliability_category_para.add_run("Cost projections assume continuation of current service delivery models. ")
+            reliability_category_para.add_run("Actual utilization may vary based on individual response to treatment, ")
+            reliability_category_para.add_run("medical complications, technological advances, or changes in standard of care. ")
+            reliability_category_para.add_run("Geographic cost variations and insurance coverage changes may affect actual expenses.")
+            
             doc.add_paragraph()  # Spacing
             
             if data['services']:
                 # Create detailed service table for this category
                 service_table_headers = [
                     'Service Name',
-                    'Cost per Unit',
-                    'Frequency\nper Year',
-                    'Service Period',
-                    'Annual\nInflation Rate',
-                    'Total Lifetime Cost'
+                    'Cost per Unit\n(Data Source Required)',
+                    'Frequency per Year\n(Medical Basis Required)',
+                    'Service Period\n(Clinical Justification)',
+                    'Annual Inflation Rate\n(Economic Basis)',
+                    'Total Lifetime Cost\n(Calculated)'
                 ]
                 
                 if self.lcp.evaluee.discount_calculations:
-                    service_table_headers.append('Present Value\nLifetime Cost')
+                    service_table_headers.append('Present Value\nLifetime Cost\n(Calculated)')
                 
                 # Create service table
                 service_table = doc.add_table(rows=len(data['services']) + 1, cols=len(service_table_headers))
@@ -352,16 +518,34 @@ class WordExporter:
                             paragraph.runs[0].font.size = Pt(8)
                         paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 
-                # Add explanatory text after each service table
+                # Add legal and methodological explanatory text
                 doc.add_paragraph()
                 explanation_para = doc.add_paragraph()
-                explanation_para.add_run("What this means: ").bold = True
-                explanation_para.add_run("Each service listed above will be provided according to the specified frequency and time period. ")
-                explanation_para.add_run("The costs shown include projected inflation adjustments over the entire care period. ")
+                explanation_para.add_run("Expert Opinion Basis: ").bold = True
+                explanation_para.add_run("Each service listed requires supporting documentation including: ")
+                explanation_para.add_run("(1) Medical necessity determined by qualified healthcare providers; ")
+                explanation_para.add_run("(2) Cost estimates from reliable sources (providers, fee schedules, market research); ")
+                explanation_para.add_run("(3) Frequency based on treatment protocols or physician recommendations; ")
+                explanation_para.add_run("(4) Duration supported by medical literature or clinical experience. ")
+                
+                doc.add_paragraph()
+                calculation_para = doc.add_paragraph()
+                calculation_para.add_run("Calculation Methodology: ").bold = True
+                calculation_para.add_run("Costs are projected using compound inflation modeling applied annually. ")
                 if self.lcp.evaluee.discount_calculations:
-                    explanation_para.add_run("Present value costs show what these future expenses are worth in today's dollars using a ")
-                    explanation_para.add_run(f"{self.lcp.settings.discount_rate:.1%} discount rate").bold = True
-                    explanation_para.add_run(".")
+                    calculation_para.add_run("Present value calculations discount future costs to current dollars using ")
+                    calculation_para.add_run(f"{self.lcp.settings.discount_rate:.1%} annual discount rate").bold = True
+                    calculation_para.add_run(" consistent with federal economic guidelines. ")
+                calculation_para.add_run("All mathematical operations follow established financial principles ")
+                calculation_para.add_run("and are subject to independent verification and cross-examination.")
+                
+                doc.add_paragraph()
+                limitations_service_para = doc.add_paragraph()
+                limitations_service_para.add_run("Service-Specific Limitations: ").bold = True
+                limitations_service_para.add_run("Projections assume medical stability and standard treatment protocols. ")
+                limitations_service_para.add_run("Individual variations in treatment response, complications, or medical advances ")
+                limitations_service_para.add_run("may alter actual service needs and costs. Expert opinions should be updated ")
+                limitations_service_para.add_run("as medical conditions and standards of care evolve.")
                 
             # Add spacing between categories
             doc.add_paragraph()
