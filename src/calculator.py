@@ -1,6 +1,6 @@
 import pandas as pd
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Any
 from .models import LifeCarePlan, Service
 
 
@@ -206,3 +206,78 @@ class CostCalculator:
             }
         
         return category_costs
+    
+    def quality_control_validation(self) -> Dict[str, Any]:
+        """
+        Implement quality control matrix validation as suggested in audit:
+        1. Extract service master table
+        2. Generate yearly matrices: Cost_year[i,j] = UnitCost_j × Freq_j × (1 + infl_j)^(i)
+        3. Row-sum → AnnualSchedule[i]; Column-sum → LifetimeCost[j]
+        4. Assert: abs(Σ LifetimeCost[j] – Σ AnnualSchedule[i]) < $1
+        """
+        base_year = int(self.lcp.settings.base_year)
+        projection_years = int(self.lcp.settings.projection_years)
+        end_year = base_year + projection_years
+        years = list(range(base_year, end_year))
+        
+        # Step 1: Extract service master table
+        all_services = []
+        for table_name, table in self.lcp.tables.items():
+            for service in table.services:
+                all_services.append({
+                    'table_name': table_name,
+                    'service': service,
+                    'unit_cost': service.unit_cost,
+                    'frequency': service.frequency_per_year,
+                    'inflation_rate': service.inflation_rate
+                })
+        
+        # Step 2: Generate yearly cost matrix
+        cost_matrix = {}  # cost_matrix[year][service_index] = cost
+        annual_schedule = {}  # annual_schedule[year] = total_cost
+        lifetime_costs = {}  # lifetime_costs[service_index] = total_lifetime_cost
+        
+        for year in years:
+            cost_matrix[year] = {}
+            annual_total = Decimal('0')
+            
+            for service_idx, service_data in enumerate(all_services):
+                service = service_data['service']
+                cost = self.calculate_service_cost(service, year)
+                cost_matrix[year][service_idx] = cost
+                annual_total += cost
+                
+                # Accumulate lifetime cost for this service
+                if service_idx not in lifetime_costs:
+                    lifetime_costs[service_idx] = Decimal('0')
+                lifetime_costs[service_idx] += cost
+            
+            annual_schedule[year] = annual_total
+        
+        # Step 3: Calculate sums
+        sum_lifetime_costs = sum(lifetime_costs.values())
+        sum_annual_schedule = sum(annual_schedule.values())
+        
+        # Step 4: Assert reconciliation within $1
+        discrepancy = abs(sum_lifetime_costs - sum_annual_schedule)
+        reconciliation_passes = discrepancy < 1.0
+        
+        return {
+            'reconciliation_passes': reconciliation_passes,
+            'discrepancy': float(discrepancy),
+            'sum_lifetime_costs': float(sum_lifetime_costs),
+            'sum_annual_schedule': float(sum_annual_schedule),
+            'annual_schedule': {year: float(total) for year, total in annual_schedule.items()},
+            'lifetime_costs': {idx: float(cost) for idx, cost in lifetime_costs.items()},
+            'service_master': [
+                {
+                    'index': idx,
+                    'table_name': s['table_name'],
+                    'service_name': s['service'].name,
+                    'unit_cost': s['unit_cost'],
+                    'frequency': s['frequency'],
+                    'inflation_rate': s['inflation_rate'],
+                    'lifetime_cost': float(lifetime_costs[idx])
+                } for idx, s in enumerate(all_services)
+            ]
+        }

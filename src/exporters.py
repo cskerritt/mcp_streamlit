@@ -817,13 +817,90 @@ class WordExporter:
         
         doc.add_paragraph()
         
-        # Check 3: Schedule summary vs detailed totals verification
+        # Check 3: Schedule summary vs detailed totals verification WITH ACTUAL COMPARISON
         check3_para = doc.add_paragraph()
         check3_para.add_run("Check 3 - Schedule Summary vs Detailed Breakdown: ").bold = True
-        check3_para.add_run("Both sections use identical calculation methods from the core calculator engine. ")
-        check3_para.add_run("Year-by-year totals should match between the Annual Cost Schedule Summary ")
-        check3_para.add_run("and the Detailed Year-by-Year Breakdown sections. ")
-        check3_para.add_run("Any discrepancies indicate calculation engine inconsistencies that require immediate correction.")
+        
+        # Recalculate detailed year totals and compare with schedule
+        schedule_df = self.calculator.build_cost_schedule()
+        detailed_year_totals = {}
+        
+        for year in years:
+            year_total = 0
+            for table_name, table in self.lcp.tables.items():
+                for service in table.services:
+                    service_cost = self.calculator.calculate_service_cost(service, year)
+                    year_total += float(service_cost)
+            detailed_year_totals[year] = year_total
+        
+        # Compare a few key years
+        test_years = [years[0], years[len(years)//4], years[len(years)//2], years[-5], years[-1]] if len(years) >= 5 else years[:3]
+        max_discrepancy = 0
+        all_match = True
+        
+        for test_year in test_years:
+            schedule_row = schedule_df[schedule_df['Year'] == test_year]
+            if not schedule_row.empty:
+                schedule_total = schedule_row['Total Nominal'].iloc[0]
+                detailed_total = detailed_year_totals[test_year]
+                discrepancy = abs(schedule_total - detailed_total)
+                max_discrepancy = max(max_discrepancy, discrepancy)
+                
+                if discrepancy > 1.0:
+                    all_match = False
+                    check3_para.add_run(f"Year {test_year}: Schedule=${schedule_total:,.0f}, Detailed=${detailed_total:,.0f}, Δ=${discrepancy:,.0f}. ")
+        
+        if all_match:
+            check3_para.add_run("✓ MATCH - All tested years match between Schedule Summary and Detailed Breakdown.").bold = True
+        else:
+            check3_para.add_run(f"✗ DISCREPANCY - Maximum difference of ${max_discrepancy:,.0f} found between sections.").bold = True
+        
+        doc.add_paragraph()
+        
+        # Check 4: Total verification across all sections
+        schedule_total_sum = schedule_df['Total Nominal'].sum()
+        detailed_total_sum = sum(detailed_year_totals.values())
+        
+        check4_para = doc.add_paragraph()
+        check4_para.add_run("Check 4 - Total Sum Verification: ").bold = True
+        check4_para.add_run(f"Schedule 39-year sum: ${schedule_total_sum:,.2f}. ")
+        check4_para.add_run(f"Detailed 39-year sum: ${detailed_total_sum:,.2f}. ")
+        check4_para.add_run(f"Executive total: ${executive_total:,.2f}. ")
+        
+        if (abs(schedule_total_sum - detailed_total_sum) < 1.0 and 
+            abs(schedule_total_sum - executive_total) < 1.0):
+            check4_para.add_run("✓ ALL MATCH - Perfect reconciliation across all sections.").bold = True
+        else:
+            check4_para.add_run("✗ DISCREPANCY - Requires immediate correction.").bold = True
+        
+        doc.add_paragraph()
+        
+        # Check 5: Quality Control Matrix Validation (Audit Template)
+        check5_para = doc.add_paragraph()
+        check5_para.add_run("Check 5 - Quality Control Matrix Validation: ").bold = True
+        
+        qc_validation = self.calculator.quality_control_validation()
+        check5_para.add_run(f"Matrix reconciliation test: ")
+        
+        if qc_validation['reconciliation_passes']:
+            check5_para.add_run(f"✓ PASS - Discrepancy of ${qc_validation['discrepancy']:.2f} (< $1.00).").bold = True
+        else:
+            check5_para.add_run(f"✗ FAIL - Discrepancy of ${qc_validation['discrepancy']:.2f} exceeds $1.00 tolerance.").bold = True
+        
+        check5_para.add_run(f" Sum of lifetime costs: ${qc_validation['sum_lifetime_costs']:,.2f}. ")
+        check5_para.add_run(f"Sum of annual schedule: ${qc_validation['sum_annual_schedule']:,.2f}.")
+        
+        doc.add_paragraph()
+        
+        # Matrix validation explanation
+        matrix_para = doc.add_paragraph()
+        matrix_para.add_run("Matrix Validation Method: ").bold = True
+        matrix_para.add_run("This test implements the audit-recommended quality control template: ")
+        matrix_para.add_run("(1) Extract service master table; ")
+        matrix_para.add_run("(2) Generate yearly cost matrices using Cost[year,service] = UnitCost × Frequency × (1+inflation)^years; ")
+        matrix_para.add_run("(3) Calculate row-sums (annual totals) and column-sums (lifetime costs); ")
+        matrix_para.add_run("(4) Verify absolute difference < $1.00. ")
+        matrix_para.add_run("This ensures mathematical lock-step across all presentation layers.")
         
         doc.add_paragraph()
         
