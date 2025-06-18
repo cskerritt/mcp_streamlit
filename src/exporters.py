@@ -331,6 +331,9 @@ class ExcelExporter:
                 if service.occurrence_years:
                     service_type = 'Discrete Occurrences'
                     special_years = ', '.join(map(str, service.occurrence_years))
+                elif hasattr(service, 'is_distributed_instances') and service.is_distributed_instances:
+                    service_type = 'Distributed Instances'
+                    special_years = f'{service.total_instances}x over {service.distribution_period_years:.1f} yrs'
                 elif service.start_year == service.end_year:
                     service_type = 'One-time'
                 
@@ -804,16 +807,23 @@ class WordExporter:
                             service_period = f"Year {years[0]} only"
                         else:
                             service_period = f"Years {min(years)}-{max(years)}\n({len(years)} specific years)"
+                    elif service.get('is_distributed_instances', False):
+                        service_period = f"{service['total_instances']}x over {service['distribution_period_years']:.1f} years\n(Starting {service['start_year']})"
                     else:
                         start_yr = service['start_year'] if service['start_year'] else 'Start of plan'
                         end_yr = service['end_year'] if service['end_year'] else 'End of plan'
                         service_period = f"{start_yr} to {end_yr}"
                     
                     # Fill in service data
+                    if service.get('is_distributed_instances', False):
+                        frequency_display = f"{service['frequency_per_year']:.2f}/yr\n({service['total_instances']}x total)"
+                    else:
+                        frequency_display = f"{service['frequency_per_year']:.1f}x"
+                    
                     service_data = [
                         service['name'],
                         f"${service['unit_cost']:,.2f}",
-                        f"{service['frequency_per_year']:.1f}x",
+                        frequency_display,
                         service_period,
                         f"{service['inflation_rate']:.1f}%",
                         f"${service['nominal_total']:,.2f}"

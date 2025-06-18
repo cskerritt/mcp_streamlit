@@ -25,6 +25,11 @@ class Service:
     is_one_time_cost: bool = False
     one_time_cost_year: Optional[int] = None
     
+    # Distributed instances support
+    is_distributed_instances: bool = False
+    total_instances: Optional[int] = None
+    distribution_period_years: Optional[float] = None
+    
     def __post_init__(self):
         """Validate service data after initialization."""
         if not self.is_one_time_cost:
@@ -58,6 +63,15 @@ class Service:
         # One-time costs should have frequency of 1
         if self.is_one_time_cost and self.frequency_per_year != 1:
             self.frequency_per_year = 1
+        
+        # Validate distributed instances
+        if self.is_distributed_instances:
+            if self.total_instances is None or self.total_instances <= 0:
+                raise ValueError("Distributed instances must have a positive total instance count")
+            if self.distribution_period_years is None or self.distribution_period_years <= 0:
+                raise ValueError("Distributed instances must have a positive distribution period")
+            # Calculate effective frequency per year based on distribution
+            self.frequency_per_year = self.total_instances / self.distribution_period_years
 
 
 @dataclass

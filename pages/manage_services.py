@@ -170,9 +170,14 @@ def show_service_management():
                     else:
                         st.write(f"**Cost:** ${service.unit_cost:,.2f}")
 
-                    st.write(f"**Frequency:** {service.frequency_per_year:.1f}/year")
+                    # Display frequency information
+                    if hasattr(service, 'is_distributed_instances') and service.is_distributed_instances:
+                        st.write(f"**Frequency:** {service.frequency_per_year:.2f}/year ({service.total_instances}x total)")
+                    else:
+                        st.write(f"**Frequency:** {service.frequency_per_year:.1f}/year")
                     st.write(f"**Inflation:** {service.inflation_rate:.1%}")
 
+                    # Display service type information
                     if service.is_one_time_cost:
                         st.write(f"**Type:** One-time cost in {service.one_time_cost_year}")
                     elif service.occurrence_years:
@@ -180,6 +185,9 @@ def show_service_management():
                         if len(years_display) > 50:  # Truncate if too long
                             years_display = years_display[:47] + "..."
                         st.write(f"**Type:** Specific years: {years_display}")
+                    elif hasattr(service, 'is_distributed_instances') and service.is_distributed_instances:
+                        st.write(f"**Type:** {service.total_instances} instances over {service.distribution_period_years:.1f} years")
+                        st.write(f"**Period:** {service.start_year} to {service.start_year + service.distribution_period_years:.0f}")
                     else:
                         st.write(f"**Type:** Recurring from {service.start_year} to {service.end_year}")
                 
@@ -268,7 +276,7 @@ def show_add_service_form(table: ServiceTable):
                 value=1.0,
                 step=0.1,
                 format="%.2f",
-                help="How many times per year this service occurs. Examples:\n• 1.0 = Once per year\n• 0.5 = Every 2 years\n• 1.5 = Every 1.5 years\n• 0.33 = Every 3 years\n• 0.25 = Every 4 years"
+                help="How many times per year this service occurs. Examples:\n• 1.0 = Once per year\n• 0.5 = Every 2 years\n• 1.5 = Every 1.5 years\n• 0.33 = Every 3 years\n• 0.25 = Every 4 years\n\nNote: For 'Distributed Instances' this will be calculated automatically."
             )
 
             # Show frequency interpretation
@@ -306,7 +314,7 @@ def show_add_service_form(table: ServiceTable):
         st.subheader("Service Timing")
         service_type = st.radio(
             "Service Type",
-            ["Recurring", "Discrete Occurrences", "One-time Cost", "Specific Years"],
+            ["Recurring", "Discrete Occurrences", "One-time Cost", "Specific Years", "Distributed Instances"],
             help="How often this service occurs"
         )
         
@@ -323,7 +331,7 @@ def show_add_service_form(table: ServiceTable):
                 end_year = st.number_input(
                     "End Year",
                     min_value=start_year,
-                    value=st.session_state.lcp_data.settings.base_year + int(st.session_state.lcp_data.settings.projection_years) - 1,
+                    value=int(st.session_state.lcp_data.settings.base_year + st.session_state.lcp_data.settings.projection_years) - 1,
                     step=1
                 )
 
@@ -341,6 +349,8 @@ def show_add_service_form(table: ServiceTable):
             # Create year range for selection
             base_year = st.session_state.lcp_data.settings.base_year
             end_year = base_year + int(st.session_state.lcp_data.settings.projection_years)
+            if st.session_state.lcp_data.settings.projection_years % 1 != 0:
+                end_year += 1
             available_years = list(range(base_year, end_year))
 
             # Multi-select for years
@@ -354,6 +364,48 @@ def show_add_service_form(table: ServiceTable):
             if selected_years:
                 st.info(f"Selected {len(selected_years)} years: {', '.join(map(str, sorted(selected_years)))}")
 
+        elif service_type == "Distributed Instances":
+            st.markdown("**Total Instances Spread Over Period:**")
+            st.caption("Enter the total number of times this service will occur, spread evenly over a specified period")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                total_instances = st.number_input(
+                    "Total Number of Instances *",
+                    min_value=1,
+                    value=75,
+                    step=1,
+                    help="Total number of times this service will occur (e.g., 75 therapy sessions)"
+                )
+            with col2:
+                distribution_period = st.number_input(
+                    "Distribution Period (Years) *",
+                    min_value=0.1,
+                    value=5.0,
+                    step=0.1,
+                    format="%.1f",
+                    help="Period over which instances are spread (e.g., 5 years)"
+                )
+            
+            # Calculate and show effective frequency
+            if distribution_period > 0:
+                effective_frequency = total_instances / distribution_period
+                st.info(f"💡 Effective Frequency: {effective_frequency:.2f} instances per year")
+                if effective_frequency < 1:
+                    years_per_instance = 1 / effective_frequency
+                    st.caption(f"   (Approximately 1 instance every {years_per_instance:.1f} years)")
+                else:
+                    st.caption(f"   (Approximately {effective_frequency:.1f} instances per year)")
+            
+            # Start year for distribution
+            distribution_start_year = st.number_input(
+                "Start Year for Distribution",
+                min_value=st.session_state.lcp_data.settings.base_year,
+                value=st.session_state.lcp_data.settings.base_year,
+                step=1,
+                help="Year when the distributed instances begin"
+            )
+            
         else:  # One-time cost
             one_time_year = st.number_input(
                 "Year of Occurrence",
@@ -425,6 +477,23 @@ def show_add_service_form(table: ServiceTable):
                         st.error("Please select at least one year.")
                         return
                     service_params["occurrence_years"] = sorted(selected_years)
+                elif service_type == "Distributed Instances":
+                    if total_instances <= 0:
+                        st.error("Total instances must be greater than zero.")
+                        return
+                    if distribution_period <= 0:
+                        st.error("Distribution period must be greater than zero.")
+                        return
+                    
+                    # Set up distributed instance parameters
+                    service_params.update({
+                        "is_distributed_instances": True,
+                        "total_instances": total_instances,
+                        "distribution_period_years": distribution_period,
+                        "start_year": distribution_start_year,
+                        "end_year": int(distribution_start_year + distribution_period),
+                        "frequency_per_year": total_instances / distribution_period  # This will be calculated in __post_init__
+                    })
                 else:  # One-time cost
                     service_params.update({
                         "is_one_time_cost": True,
@@ -554,6 +623,8 @@ def show_edit_service_form(table: ServiceTable, service_index: int, service: Ser
                 # Multi-select for years
                 base_year = st.session_state.lcp_data.settings.base_year
                 end_year = base_year + int(st.session_state.lcp_data.settings.projection_years)
+                if st.session_state.lcp_data.settings.projection_years % 1 != 0:
+                    end_year += 1
                 available_years = list(range(base_year, end_year))
 
                 selected_years = st.multiselect(
