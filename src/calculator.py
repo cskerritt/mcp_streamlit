@@ -34,7 +34,8 @@ class CostCalculator:
                 years_to_occurrence = service.one_time_cost_year - self.lcp.settings.base_year
                 if years_to_occurrence < 0:
                     years_to_occurrence = 0
-                inflation_factor = Decimal(str(1 + service.inflation_rate)) ** years_to_occurrence
+                # FIX: Treat inflation_rate as percentage consistently with recurring costs
+                inflation_factor = Decimal(str(1 + service.inflation_rate / 100)) ** years_to_occurrence
                 return (base_cost * inflation_factor).quantize(self.precision, rounding=ROUND_HALF_UP)
             else:
                 return Decimal('0')
