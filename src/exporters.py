@@ -633,10 +633,155 @@ class WordExporter:
                     paragraph.runs[0].font.size = Pt(9)
                 paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
+        # Add Year-by-Year Loss Schedule
+        doc.add_page_break()
+        doc.add_heading("Year-by-Year Loss Schedule", level=2)
+        
+        # Add explanation
+        loss_schedule_explanation = doc.add_paragraph()
+        loss_schedule_explanation.add_run("Loss Schedule Overview: ").bold = True
+        loss_schedule_explanation.add_run("This section provides a comprehensive year-by-year analysis of projected medical costs, ")
+        loss_schedule_explanation.add_run("organized both by overall yearly totals and detailed service category breakdowns. ")
+        loss_schedule_explanation.add_run("This format assists in understanding annual cost patterns and service delivery timing.")
+        
+        doc.add_paragraph()
+        
+        # Create overall summary table showing yearly totals by category
+        doc.add_heading("Overall Yearly Summary by Service Category", level=3)
+        
+        # Calculate year-by-year totals by category
+        years = list(range(int(self.lcp.settings.base_year), int(self.lcp.settings.base_year) + int(self.lcp.settings.projection_years)))
+        category_names = list(self.lcp.tables.keys())
+        
+        # Create matrix of costs: year x category
+        yearly_category_matrix = {}
+        yearly_totals = {}
+        category_totals = {}
+        
+        for year in years:
+            yearly_category_matrix[year] = {}
+            yearly_totals[year] = 0
+            
+            for table_name, table in self.lcp.tables.items():
+                category_cost = 0
+                for service in table.services:
+                    service_cost = self.calculator.calculate_service_cost(service, year)
+                    category_cost += float(service_cost)
+                
+                yearly_category_matrix[year][table_name] = category_cost
+                yearly_totals[year] += category_cost
+                
+                if table_name not in category_totals:
+                    category_totals[table_name] = 0
+                category_totals[table_name] += category_cost
+        
+        # Create summary table with years as rows, categories as columns
+        summary_headers = ['Year', 'Evaluee Age'] + category_names + ['Annual Total']
+        
+        # Calculate table dimensions
+        num_years = len(years)
+        num_cols = len(summary_headers)
+        
+        summary_table = doc.add_table(rows=num_years + 2, cols=num_cols)  # +2 for header and totals
+        summary_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        summary_table.style = 'Table Grid'
+        
+        # Set column widths for summary table
+        year_col_width = Inches(0.7)
+        age_col_width = Inches(0.8)
+        category_col_width = Inches(1.1)
+        total_col_width = Inches(1.2)
+        
+        summary_table.columns[0].width = year_col_width
+        summary_table.columns[1].width = age_col_width
+        for i in range(2, len(category_names) + 2):
+            summary_table.columns[i].width = category_col_width
+        summary_table.columns[-1].width = total_col_width
+        
+        # Header row
+        header_cells = summary_table.rows[0].cells
+        for idx, header in enumerate(summary_headers):
+            header_cells[idx].text = header
+            paragraph = header_cells[idx].paragraphs[0]
+            run = paragraph.runs[0]
+            run.bold = True
+            run.font.size = Pt(9)
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        # Data rows
+        for row_idx, year in enumerate(years, start=1):
+            evaluee_age = int(self.lcp.evaluee.current_age + (year - int(self.lcp.settings.base_year)))
+            row_cells = summary_table.rows[row_idx].cells
+            
+            # Year and age
+            row_cells[0].text = str(year)
+            row_cells[1].text = str(evaluee_age)
+            
+            # Category costs
+            for col_idx, category_name in enumerate(category_names, start=2):
+                cost = yearly_category_matrix[year][category_name]
+                row_cells[col_idx].text = f"${cost:,.0f}" if cost > 0 else "-"
+                
+                # Format cell
+                paragraph = row_cells[col_idx].paragraphs[0]
+                if paragraph.runs:
+                    paragraph.runs[0].font.size = Pt(8)
+                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            
+            # Annual total
+            row_cells[-1].text = f"${yearly_totals[year]:,.0f}"
+            
+            # Format year, age, and total cells
+            for cell_idx in [0, 1, -1]:
+                paragraph = row_cells[cell_idx].paragraphs[0]
+                if paragraph.runs:
+                    paragraph.runs[0].font.size = Pt(8)
+                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        # Totals row
+        totals_cells = summary_table.rows[-1].cells
+        totals_cells[0].text = "TOTALS"
+        totals_cells[1].text = ""
+        
+        for col_idx, category_name in enumerate(category_names, start=2):
+            total_cost = category_totals[category_name]
+            totals_cells[col_idx].text = f"${total_cost:,.0f}"
+            
+            # Format cell
+            paragraph = totals_cells[col_idx].paragraphs[0]
+            run = paragraph.runs[0] if paragraph.runs else paragraph.add_run(totals_cells[col_idx].text)
+            run.bold = True
+            run.font.size = Pt(9)
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        # Grand total
+        grand_total = sum(yearly_totals.values())
+        totals_cells[-1].text = f"${grand_total:,.0f}"
+        paragraph = totals_cells[-1].paragraphs[0]
+        run = paragraph.runs[0] if paragraph.runs else paragraph.add_run(totals_cells[-1].text)
+        run.bold = True
+        run.font.size = Pt(9)
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        # Format first column of totals row
+        paragraph = totals_cells[0].paragraphs[0]
+        run = paragraph.runs[0] if paragraph.runs else paragraph.add_run(totals_cells[0].text)
+        run.bold = True
+        run.font.size = Pt(9)
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        doc.add_paragraph()
+        
+        # Add summary explanation
+        summary_explanation = doc.add_paragraph()
+        summary_explanation.add_run("Summary Table Explanation: ").bold = True
+        summary_explanation.add_run("This table shows the total cost for each service category by year. ")
+        summary_explanation.add_run("Reading across each row shows the annual cost distribution across different types of medical services. ")
+        summary_explanation.add_run("Reading down each column shows how costs for a specific service category change over time due to inflation and service timing.")
+        
         # Add comprehensive year-by-year breakdown by category
-        doc.add_paragraph()
-        doc.add_paragraph()
-        doc.add_heading("Detailed Year-by-Year Breakdown by Service Category", level=2)
+        doc.add_page_break()
+        doc.add_heading("Detailed Year-by-Year Service Breakdown by Category", level=2)
         
         # Add explanation and validation notice
         detailed_explanation = doc.add_paragraph()
