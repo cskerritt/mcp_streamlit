@@ -295,42 +295,31 @@ class WordExporter:
 
         df = self.calculator.build_cost_schedule()
 
-        # Create table with improved headers and formatting for landscape
-        improved_headers = {
-            'Year': 'Year',
-            'Age': 'Evaluee Age',
-            'Total Nominal': 'Annual Cost (Nominal)',
-            'Present Value': 'Annual Cost (Present Value)',
-            'Cumulative Nominal': 'Cumulative Cost (Nominal)',
-            'Cumulative PV': 'Cumulative Cost (Present Value)'
-        }
-
         # Add spacing before table
         doc.add_paragraph()
         
-        # Create table with proper formatting
-        table = doc.add_table(rows=1, cols=len(df.columns))
+        # Create a vertical table layout - each year is a row with data flowing down
+        # Create table with rows for each year + header row
+        table = doc.add_table(rows=len(df) + 1, cols=len(df.columns))
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
         table.style = 'Table Grid'
         
-        # Add table padding and styling
-        for row in table.rows:
-            for cell in row.cells:
-                cell.top_margin = Pt(3)
-                cell.bottom_margin = Pt(3)
-                cell.left_margin = Pt(4)
-                cell.right_margin = Pt(4)
+        # Set column widths for vertical layout
+        col_width = Inches(1.5)  # Equal width columns for better balance
+        for col in table.columns:
+            col.width = col_width
 
-        # Set column widths for better fit in landscape
-        for i, col in enumerate(table.columns):
-            if i == 0:  # Year column
-                col.width = Inches(1.0)
-            elif i == 1:  # Age column
-                col.width = Inches(1.2)
-            else:  # Cost columns - distribute remaining space evenly
-                col.width = Inches(2.8)
+        # Improved headers for better readability
+        improved_headers = {
+            'Year': 'Year',
+            'Age': 'Evaluee Age',
+            'Total Nominal': 'Annual Cost\n(Nominal)',
+            'Present Value': 'Annual Cost\n(Present Value)',
+            'Cumulative Nominal': 'Cumulative Cost\n(Nominal)',
+            'Cumulative PV': 'Cumulative Cost\n(Present Value)'
+        }
 
-        # Header row with improved names
+        # Header row with improved formatting
         hdr_cells = table.rows[0].cells
         for idx, col in enumerate(df.columns):
             header_text = improved_headers.get(col, col)
@@ -339,27 +328,36 @@ class WordExporter:
             run = paragraph.runs[0]
             run.bold = True
             run.font.size = Pt(10)
-            # Center align headers
             paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            # Add cell formatting
+            hdr_cells[idx].top_margin = Pt(4)
+            hdr_cells[idx].bottom_margin = Pt(4)
+            hdr_cells[idx].left_margin = Pt(3)
+            hdr_cells[idx].right_margin = Pt(3)
 
-        # Data rows with improved formatting
-        for _, row in df.iterrows():
-            row_cells = table.add_row().cells
-            # Apply padding to new row cells
-            for cell in row_cells:
-                cell.top_margin = Pt(3)
-                cell.bottom_margin = Pt(3)
-                cell.left_margin = Pt(4)
-                cell.right_margin = Pt(4)
+        # Data rows - each row represents one year
+        for row_idx, (_, data_row) in enumerate(df.iterrows(), start=1):
+            row_cells = table.rows[row_idx].cells
             
-            for idx, col in enumerate(df.columns):
-                value = row[col]
+            for col_idx, col in enumerate(df.columns):
+                value = data_row[col]
+                
+                # Format the value appropriately
                 if isinstance(value, (int, float)) and col not in ['Year', 'Age']:
-                    row_cells[idx].text = f"${value:,.0f}"  # Remove decimals for cleaner look
+                    formatted_value = f"${value:,.0f}"
                 else:
-                    row_cells[idx].text = str(int(value) if isinstance(value, float) and value.is_integer() else value)
-                # Format text and center align all data
-                paragraph = row_cells[idx].paragraphs[0]
+                    formatted_value = str(int(value) if isinstance(value, float) and value.is_integer() else value)
+                
+                row_cells[col_idx].text = formatted_value
+                
+                # Apply cell formatting
+                row_cells[col_idx].top_margin = Pt(3)
+                row_cells[col_idx].bottom_margin = Pt(3)
+                row_cells[col_idx].left_margin = Pt(3)
+                row_cells[col_idx].right_margin = Pt(3)
+                
+                # Format text
+                paragraph = row_cells[col_idx].paragraphs[0]
                 if paragraph.runs:
                     paragraph.runs[0].font.size = Pt(9)
                 paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
