@@ -316,38 +316,41 @@ class WordExporter:
         # Add table padding and styling
         for row in table.rows:
             for cell in row.cells:
-                cell.top_margin = Pt(6)
-                cell.bottom_margin = Pt(6)
-                cell.left_margin = Pt(8)
-                cell.right_margin = Pt(8)
+                cell.top_margin = Pt(3)
+                cell.bottom_margin = Pt(3)
+                cell.left_margin = Pt(4)
+                cell.right_margin = Pt(4)
 
         # Set column widths for better fit in landscape
         for i, col in enumerate(table.columns):
             if i == 0:  # Year column
-                col.width = Inches(0.8)
-            elif i == 1:  # Age column
                 col.width = Inches(1.0)
-            else:  # Cost columns
-                col.width = Inches(1.8)
+            elif i == 1:  # Age column
+                col.width = Inches(1.2)
+            else:  # Cost columns - distribute remaining space evenly
+                col.width = Inches(2.8)
 
         # Header row with improved names
         hdr_cells = table.rows[0].cells
         for idx, col in enumerate(df.columns):
             header_text = improved_headers.get(col, col)
             hdr_cells[idx].text = header_text
-            hdr_cells[idx].paragraphs[0].runs[0].bold = True
+            paragraph = hdr_cells[idx].paragraphs[0]
+            run = paragraph.runs[0]
+            run.bold = True
+            run.font.size = Pt(10)
             # Center align headers
-            hdr_cells[idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
         # Data rows with improved formatting
         for _, row in df.iterrows():
             row_cells = table.add_row().cells
             # Apply padding to new row cells
             for cell in row_cells:
-                cell.top_margin = Pt(6)
-                cell.bottom_margin = Pt(6)
-                cell.left_margin = Pt(8)
-                cell.right_margin = Pt(8)
+                cell.top_margin = Pt(3)
+                cell.bottom_margin = Pt(3)
+                cell.left_margin = Pt(4)
+                cell.right_margin = Pt(4)
             
             for idx, col in enumerate(df.columns):
                 value = row[col]
@@ -355,8 +358,11 @@ class WordExporter:
                     row_cells[idx].text = f"${value:,.0f}"  # Remove decimals for cleaner look
                 else:
                     row_cells[idx].text = str(int(value) if isinstance(value, float) and value.is_integer() else value)
-                # Center align all data
-                row_cells[idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                # Format text and center align all data
+                paragraph = row_cells[idx].paragraphs[0]
+                if paragraph.runs:
+                    paragraph.runs[0].font.size = Pt(9)
+                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
         # Add spacing after table
         doc.add_paragraph()
