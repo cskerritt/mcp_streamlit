@@ -8,6 +8,7 @@ import os
 from datetime import datetime
 from src.calculator import CostCalculator
 from src.exporters import ExcelExporter, WordExporter, PDFExporter
+from src.database import db
 
 def show_export_reports_page():
     """Display the export reports page."""
@@ -39,9 +40,87 @@ def show_export_reports_page():
     
     st.markdown(f"Export reports for: **{st.session_state.lcp_data.evaluee.name}**")
     
+    # Show scenario information
+    has_multiple_scenarios = len(st.session_state.lcp_data.scenarios) > 1
+    if has_multiple_scenarios:
+        current_scenario = st.session_state.lcp_data.get_current_scenario()
+        st.info(f"📋 **Current Scenario:** {current_scenario.name if current_scenario else 'None'} | **Total Scenarios:** {len(st.session_state.lcp_data.scenarios)}")
+    
     # Create calculator for exports
     try:
         calculator = CostCalculator(st.session_state.lcp_data)
+        
+        # Multi-scenario export options
+        if has_multiple_scenarios:
+            st.subheader("🎭 Multi-Scenario Export Options")
+            
+            # Initialize export mode if not set
+            if 'export_mode' not in st.session_state:
+                st.session_state.export_mode = "single"
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if st.button("📊 Single Scenario Mode", 
+                           disabled=(st.session_state.export_mode == "single"),
+                           key="single_mode", 
+                           use_container_width=True):
+                    st.session_state.export_mode = "single"
+                    st.rerun()
+                
+                if st.session_state.export_mode == "single":
+                    st.success(f"✅ Exporting: **{current_scenario.name if current_scenario else 'Unknown'}**")
+                else:
+                    st.markdown(f"Export current scenario: **{current_scenario.name if current_scenario else 'Unknown'}**")
+                
+            with col2:
+                if st.button("🔄 Multi-Scenario Mode", 
+                           disabled=(st.session_state.export_mode == "multi"),
+                           key="multi_mode", 
+                           use_container_width=True):
+                    st.session_state.export_mode = "multi"
+                    st.rerun()
+                
+                if st.session_state.export_mode == "multi":
+                    st.success(f"✅ Exporting: **All {len(st.session_state.lcp_data.scenarios)} scenarios**")
+                else:
+                    st.markdown(f"Export all {len(st.session_state.lcp_data.scenarios)} scenarios with comparison tables")
+            
+            st.markdown("---")
+        else:
+            st.session_state.export_mode = "single"
+        
+        # Plan protection section
+        st.subheader("🛡️ Plan Protection")
+        st.markdown("Before exporting, you can create a copy of this plan to prevent accidental modifications.")
+        
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            copy_name = st.text_input(
+                "Create a copy with name:",
+                value=f"{st.session_state.lcp_data.evaluee.name} - Export Copy",
+                help="Create a copy of the current plan before making changes"
+            )
+        with col2:
+            st.markdown("<br>", unsafe_allow_html=True)  # Add spacing to align button
+            if st.button("📋 Create Copy", use_container_width=True):
+                if copy_name and copy_name.strip():
+                    try:
+                        from src.auth import auth
+                        current_user = auth.get_current_user()
+                        user_id = current_user['id'] if current_user else None
+                        
+                        # Create copy using the database method
+                        if db.copy_life_care_plan(st.session_state.lcp_data.evaluee.name, copy_name.strip(), user_id):
+                            st.success(f"✅ Created copy: {copy_name}")
+                        else:
+                            st.error(f"Failed to copy plan. Name '{copy_name}' may already exist.")
+                    except Exception as e:
+                        st.error(f"Error copying plan: {str(e)}")
+                else:
+                    st.error("Please enter a valid name for the copy")
+        
+        st.markdown("---")
         
         # Export options
         st.subheader("📄 Available Export Formats")
@@ -58,8 +137,9 @@ def show_export_reports_page():
             - Category breakdown
             """)
             
+            include_all_scenarios = has_multiple_scenarios and st.session_state.get('export_mode') == 'multi'
             if st.button("📊 Export to Excel", use_container_width=True):
-                export_to_excel(calculator)
+                export_to_excel(calculator, include_all_scenarios)
         
         with col2:
             st.markdown("### 📝 Word Document")
@@ -72,7 +152,7 @@ def show_export_reports_page():
             """)
             
             if st.button("📝 Export to Word", use_container_width=True):
-                export_to_word(calculator)
+                export_to_word(calculator, include_all_scenarios)
         
         with col3:
             st.markdown("### 📄 PDF Report")
@@ -106,18 +186,26 @@ def show_export_reports_page():
         st.error(f"Error preparing exports: {str(e)}")
         st.exception(e)
 
-def export_to_excel(calculator):
+def export_to_excel(calculator, include_all_scenarios=False):
     """Export to Excel format."""
     try:
         with st.spinner("Generating Excel report..."):
             # Create temporary file
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             evaluee_name = st.session_state.lcp_data.evaluee.name.replace(" ", "_")
-            filename = f"{evaluee_name}_LCP_{timestamp}.xlsx"
+            
+            if include_all_scenarios:
+                filename = f"{evaluee_name}_LCP_MultiScenario_{timestamp}.xlsx"
+                export_label = "📥 Download Multi-Scenario Excel Report"
+                success_msg = "✅ Multi-scenario Excel report generated successfully!"
+            else:
+                filename = f"{evaluee_name}_LCP_{timestamp}.xlsx"
+                export_label = "📥 Download Excel Report"
+                success_msg = "✅ Excel report generated successfully!"
             
             with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
                 # Export to temporary file
-                ExcelExporter(calculator).export(tmp_file.name)
+                ExcelExporter(calculator).export(tmp_file.name, include_all_scenarios=include_all_scenarios)
                 
                 # Read file for download
                 with open(tmp_file.name, 'rb') as f:
@@ -128,29 +216,37 @@ def export_to_excel(calculator):
                 
                 # Provide download
                 st.download_button(
-                    label="📥 Download Excel Report",
+                    label=export_label,
                     data=file_data,
                     file_name=filename,
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
                 
-                st.success("✅ Excel report generated successfully!")
+                st.success(success_msg)
                 
     except Exception as e:
         st.error(f"Error generating Excel report: {str(e)}")
 
-def export_to_word(calculator):
+def export_to_word(calculator, include_all_scenarios=False):
     """Export to Word format."""
     try:
         with st.spinner("Generating Word document..."):
             # Create temporary file
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             evaluee_name = st.session_state.lcp_data.evaluee.name.replace(" ", "_")
-            filename = f"{evaluee_name}_LCP_{timestamp}.docx"
+            
+            if include_all_scenarios:
+                filename = f"{evaluee_name}_LCP_MultiScenario_{timestamp}.docx"
+                export_label = "📥 Download Multi-Scenario Word Document"
+                success_msg = "✅ Multi-scenario Word document generated successfully!"
+            else:
+                filename = f"{evaluee_name}_LCP_{timestamp}.docx"
+                export_label = "📥 Download Word Document"
+                success_msg = "✅ Word document generated successfully!"
             
             with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as tmp_file:
                 # Export to temporary file
-                WordExporter(calculator).export(tmp_file.name)
+                WordExporter(calculator).export(tmp_file.name, include_all_scenarios=include_all_scenarios)
                 
                 # Read file for download
                 with open(tmp_file.name, 'rb') as f:
@@ -161,13 +257,13 @@ def export_to_word(calculator):
                 
                 # Provide download
                 st.download_button(
-                    label="📥 Download Word Document",
+                    label=export_label,
                     data=file_data,
                     file_name=filename,
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 )
                 
-                st.success("✅ Word document generated successfully!")
+                st.success(success_msg)
                 
     except Exception as e:
         st.error(f"Error generating Word document: {str(e)}")

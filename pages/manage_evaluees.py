@@ -163,6 +163,47 @@ def show_manage_evaluees_page():
                         except Exception as e:
                             st.error(f"Error loading {evaluee['name']}: {str(e)}")
                     
+                    # Copy button
+                    copy_key = f"copy_{evaluee['name']}_{i}"
+                    copy_name_key = f"copy_name_{evaluee['name']}_{i}"
+                    copy_confirm_key = f"copy_confirm_{evaluee['name']}_{i}"
+                    
+                    if st.button(f"📋 Copy", key=copy_key, use_container_width=True):
+                        st.session_state[copy_confirm_key] = True
+                    
+                    # Show copy dialog if copy was clicked
+                    if st.session_state.get(copy_confirm_key, False):
+                        st.markdown("**📋 Copy Life Care Plan**")
+                        new_name = st.text_input(
+                            "New name for copy:",
+                            value=f"{evaluee['name']} - Copy",
+                            key=copy_name_key
+                        )
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.button("✅ Create Copy", key=f"confirm_copy_{evaluee['name']}_{i}", use_container_width=True):
+                                if new_name and new_name.strip():
+                                    try:
+                                        current_user = auth.get_current_user()
+                                        user_id = current_user['id'] if current_user else None
+                                        
+                                        if db.copy_life_care_plan(evaluee['name'], new_name.strip(), user_id):
+                                            st.success(f"✅ Created copy: {new_name}")
+                                            st.session_state[copy_confirm_key] = False
+                                            st.rerun()
+                                        else:
+                                            st.error(f"Failed to copy plan. Name '{new_name}' may already exist.")
+                                    except Exception as e:
+                                        st.error(f"Error copying plan: {str(e)}")
+                                else:
+                                    st.error("Please enter a valid name for the copy")
+                        
+                        with col2:
+                            if st.button("❌ Cancel", key=f"cancel_copy_{evaluee['name']}_{i}", use_container_width=True):
+                                st.session_state[copy_confirm_key] = False
+                                st.rerun()
+                    
                     st.markdown("---")
                     
                     # Delete button with confirmation

@@ -309,6 +309,56 @@ class LifeCarePlan:
         """Set tables in current scenario (for backward compatibility)."""
         current_scenario = self.get_current_scenario()
         current_scenario.tables = value
+    
+    def copy(self, new_name: str, new_suffix: str = "Copy") -> 'LifeCarePlan':
+        """Create a deep copy of this life care plan with a new evaluee name.
+        
+        Args:
+            new_name: New name for the evaluee
+            new_suffix: Suffix to append if name collision (default: "Copy")
+            
+        Returns:
+            A new LifeCarePlan instance that is completely independent
+        """
+        import copy
+        
+        # Create new evaluee with new name
+        new_evaluee = Evaluee(
+            name=new_name,
+            current_age=self.evaluee.current_age,
+            birth_year=self.evaluee.birth_year,
+            discount_calculations=self.evaluee.discount_calculations
+        )
+        
+        # Deep copy settings
+        new_settings = ProjectionSettings(
+            base_year=self.settings.base_year,
+            projection_years=self.settings.projection_years,
+            discount_rate=self.settings.discount_rate
+        )
+        
+        # Create new LCP
+        new_lcp = LifeCarePlan(evaluee=new_evaluee, settings=new_settings)
+        
+        # Clear the default baseline scenario
+        new_lcp.scenarios.clear()
+        
+        # Deep copy all scenarios
+        for scenario_name, scenario in self.scenarios.items():
+            new_scenario = Scenario(
+                name=scenario.name,
+                description=scenario.description,
+                settings=copy.deepcopy(scenario.settings) if scenario.settings else new_settings,
+                tables=copy.deepcopy(scenario.tables),
+                is_baseline=scenario.is_baseline,
+                created_at=datetime.now()
+            )
+            new_lcp.scenarios[scenario_name] = new_scenario
+        
+        # Set the same active scenario
+        new_lcp.active_scenario = self.active_scenario
+        
+        return new_lcp
 
 
 class LCPConfigModel(BaseModel):

@@ -589,6 +589,45 @@ class LCPDatabase:
             logger.error(f"Error listing evaluees: {e}")
             return []
     
+    def copy_life_care_plan(self, source_name: str, new_name: str, user_id: Optional[int] = None) -> bool:
+        """Copy a life care plan to a new name.
+        
+        Args:
+            source_name: Name of the evaluee/plan to copy
+            new_name: New name for the copied plan
+            user_id: User ID for ownership (optional)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Load the source plan
+            source_lcp = self.load_life_care_plan(source_name)
+            if not source_lcp:
+                logger.error(f"Source plan '{source_name}' not found")
+                return False
+            
+            # Check if new name already exists
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('SELECT id FROM evaluees WHERE name = ?', (new_name,))
+                if cursor.fetchone():
+                    logger.error(f"Plan with name '{new_name}' already exists")
+                    return False
+            
+            # Create a copy with the new name
+            new_lcp = source_lcp.copy(new_name)
+            
+            # Save the copy to database
+            self.save_life_care_plan(new_lcp, user_id)
+            
+            logger.info(f"Successfully copied plan '{source_name}' to '{new_name}'")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error copying life care plan: {e}")
+            return False
+    
     def delete_evaluee(self, evaluee_name: str) -> bool:
         """Delete an evaluee and all associated data."""
         try:
