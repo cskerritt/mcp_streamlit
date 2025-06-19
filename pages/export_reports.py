@@ -227,19 +227,36 @@ def show_export_reports_page():
         
         with col2:
             st.markdown("### 📝 Word Document")
-            st.markdown("""
-            **Includes:**
-            - Executive summary
-            - Cost breakdown by category
-            - Detailed cost schedule
-            - Professional formatting
-            """)
-            
-            if st.button("📝 Export to Word", use_container_width=True):
-                if include_all_scenarios and not selected_scenarios:
-                    st.error("Please select at least one scenario to export.")
-                else:
-                    export_to_word(calculator, include_all_scenarios, selected_scenarios)
+            if include_all_scenarios and selected_scenarios and len(selected_scenarios) > 1:
+                st.markdown("""
+                **Multi-Scenario Options:**
+                - Comparison tables
+                - OR Combined format
+                """)
+                
+                # Two Word export options for multi-scenario
+                col2a, col2b = st.columns(2)
+                with col2a:
+                    if st.button("📝 Comparison Format", use_container_width=True, help="Export scenarios in comparison table format"):
+                        export_to_word(calculator, include_all_scenarios, selected_scenarios)
+                
+                with col2b:
+                    if st.button("📝 Combined Format", use_container_width=True, help="Export all scenarios combined in single format"):
+                        export_to_word_combined(calculator, selected_scenarios)
+            else:
+                st.markdown("""
+                **Includes:**
+                - Executive summary
+                - Cost breakdown by category
+                - Detailed cost schedule
+                - Professional formatting
+                """)
+                
+                if st.button("📝 Export to Word", use_container_width=True):
+                    if include_all_scenarios and not selected_scenarios:
+                        st.error("Please select at least one scenario to export.")
+                    else:
+                        export_to_word(calculator, include_all_scenarios, selected_scenarios)
         
         with col3:
             st.markdown("### 📄 PDF Report")
@@ -504,3 +521,36 @@ def show_report_preview(calculator):
         
     except Exception as e:
         st.error(f"Error generating preview: {str(e)}")
+
+def export_to_word_combined(calculator, selected_scenarios):
+    """Export all selected scenarios combined into a single Word document format."""
+    try:
+        with st.spinner("Generating combined multi-scenario Word document..."):
+            # Create temporary file
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            evaluee_name = st.session_state.lcp_data.evaluee.name.replace(" ", "_")
+            filename = f"{evaluee_name}_LCP_Combined_Scenarios_{timestamp}.docx"
+            
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as tmp_file:
+                # Export to temporary file using the new combined export method
+                WordExporter(calculator).export_combined_scenarios(tmp_file.name, selected_scenarios)
+                
+                # Read file for download
+                with open(tmp_file.name, 'rb') as f:
+                    file_data = f.read()
+                
+                # Clean up
+                os.unlink(tmp_file.name)
+                
+                # Provide download
+                st.download_button(
+                    label="📥 Download Combined Multi-Scenario Word Document",
+                    data=file_data,
+                    file_name=filename,
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                )
+                
+                st.success("✅ Combined multi-scenario Word document generated successfully!")
+                
+    except Exception as e:
+        st.error(f"Error generating combined Word document: {str(e)}")

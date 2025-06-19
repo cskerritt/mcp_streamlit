@@ -982,12 +982,8 @@ class WordExporter:
         
         # Only add technical appendix if requested (not for legal exhibits)
         if include_technical_appendix:
-            doc.add_page_break()
-            
-            # Add Calculation Methodology Section
-            self._add_calculation_methodology_section(doc)
-            
-            doc.add_page_break()
+            # Calculation methodology section removed per user request
+            pass
         
         # Summary statistics
         doc.add_heading("Executive Summary", level=2)
@@ -1029,23 +1025,6 @@ class WordExporter:
                 summary_para.add_run(f" (${data['table_present_value_total']:,.2f} in present value)")
             summary_para.add_run(".")
             
-            # Add methodology documentation for this category
-            doc.add_paragraph()
-            methodology_category_para = doc.add_paragraph()
-            methodology_category_para.add_run("Data Source Requirements for This Category: ").bold = True
-            methodology_category_para.add_run("Cost estimates for services in this category should be supported by ")
-            methodology_category_para.add_run("current market rates, provider quotes, published fee schedules, or peer-reviewed literature. ")
-            methodology_category_para.add_run("Service frequencies should be based on medical necessity, physician recommendations, ")
-            methodology_category_para.add_run("clinical practice guidelines, or established treatment protocols. ")
-            methodology_category_para.add_run("All assumptions regarding timing, duration, and intensity of services ")
-            methodology_category_para.add_run("should be documented and supportable through medical evidence.")
-            
-            reliability_category_para = doc.add_paragraph()
-            reliability_category_para.add_run("Reliability Considerations: ").bold = True
-            reliability_category_para.add_run("Cost projections assume continuation of current service delivery models. ")
-            reliability_category_para.add_run("Actual utilization may vary based on individual response to treatment, ")
-            reliability_category_para.add_run("medical complications, technological advances, or changes in standard of care. ")
-            reliability_category_para.add_run("Geographic cost variations and insurance coverage changes may affect actual expenses.")
             
             doc.add_paragraph()  # Spacing
             
@@ -1195,7 +1174,10 @@ class WordExporter:
         df = self.calculator.build_cost_schedule()
         
         # Create simplified annual summary table
-        if "Present Value" in df.columns:
+        # Only show present value if discount calculations are enabled AND discount rate > 0
+        show_present_value = self.lcp.evaluee.discount_calculations and self.lcp.settings.discount_rate > 0
+        
+        if show_present_value and "Present Value" in df.columns:
             table_columns = ['Year', 'Evaluee Age', 'Total Annual Cost', 'Present Value Cost']
             table_data = []
             for _, row in df.iterrows():
@@ -1481,7 +1463,8 @@ class WordExporter:
             if year_services:
                 # Create table for this year's services
                 year_table_headers = ['Service Category', 'Service Name', 'Frequency', 'Cost This Year']
-                if self.lcp.evaluee.discount_calculations:
+                # Only show present value if discount calculations are enabled AND discount rate > 0
+                if self.lcp.evaluee.discount_calculations and self.lcp.settings.discount_rate > 0:
                     year_table_headers.append('Present Value Cost')
                 
                 year_table = doc.add_table(rows=len(year_services) + 2, cols=len(year_table_headers))  # +2 for header and total
@@ -1490,7 +1473,7 @@ class WordExporter:
                 
                 # Set column widths
                 year_col_widths = [Inches(1.8), Inches(2.2), Inches(0.8), Inches(1.2)]
-                if self.lcp.evaluee.discount_calculations:
+                if self.lcp.evaluee.discount_calculations and self.lcp.settings.discount_rate > 0:
                     year_col_widths.append(Inches(1.2))
                 
                 for i, width in enumerate(year_col_widths):
@@ -1520,7 +1503,8 @@ class WordExporter:
                         f"${service['inflated_cost']:,.0f}"
                     ]
                     
-                    if self.lcp.evaluee.discount_calculations:
+                    # Only include present value if discount calculations are enabled AND discount rate > 0
+                    if self.lcp.evaluee.discount_calculations and self.lcp.settings.discount_rate > 0:
                         service_row_data.append(f"${service['present_value_cost']:,.0f}")
                     
                     for col_idx, cell_value in enumerate(service_row_data):
@@ -1537,7 +1521,8 @@ class WordExporter:
                 total_row_cells[2].text = ""
                 total_row_cells[3].text = f"${year_total:,.0f}"
                 
-                if self.lcp.evaluee.discount_calculations:
+                # Only include present value total if discount calculations are enabled AND discount rate > 0
+                if self.lcp.evaluee.discount_calculations and self.lcp.settings.discount_rate > 0:
                     total_row_cells[4].text = f"${year_total_pv:,.0f}"
                 
                 # Format total row
@@ -1555,143 +1540,6 @@ class WordExporter:
             
             doc.add_paragraph()  # Spacing between years
         
-        # Add Cross-Verification and Quality Control Section
-        doc.add_page_break()
-        doc.add_heading("Calculation Cross-Verification and Quality Control", level=2)
-        
-        # Verify totals match between different sections
-        verification_para = doc.add_paragraph()
-        verification_para.add_run("Quality Control Verification: ").bold = True
-        verification_para.add_run("The following cross-checks ensure calculation accuracy and consistency throughout this report:")
-        
-        doc.add_paragraph()
-        
-        # Check 1: Category totals vs Executive total
-        total_from_categories = sum(data['table_nominal_total'] for data in category_costs.values())
-        summary_stats = self.calculator.calculate_summary_statistics()
-        executive_total = summary_stats['total_nominal_cost']
-        
-        check1_para = doc.add_paragraph()
-        check1_para.add_run("Check 1 - Category Totals vs Executive Summary: ").bold = True
-        check1_para.add_run(f"Sum of all category totals: ${total_from_categories:,.2f}. ")
-        check1_para.add_run(f"Executive summary total: ${executive_total:,.2f}. ")
-        if abs(total_from_categories - executive_total) < 1.0:
-            check1_para.add_run("✓ MATCH - Calculation consistent.").bold = True
-        else:
-            check1_para.add_run(f"✗ DISCREPANCY of ${abs(total_from_categories - executive_total):,.2f} - Requires review.").bold = True
-        
-        doc.add_paragraph()
-        
-        # Check 2: Average annual cost calculation
-        check2_para = doc.add_paragraph()
-        check2_para.add_run("Check 2 - Average Annual Cost Calculation: ").bold = True
-        actual_years = summary_stats.get('actual_years_with_costs', self.lcp.settings.projection_years)
-        calculated_average = executive_total / actual_years if actual_years > 0 else 0
-        reported_average = summary_stats['average_annual_cost']
-        check2_para.add_run(f"Total cost ÷ {actual_years} years = ${calculated_average:,.2f}. ")
-        check2_para.add_run(f"Reported average: ${reported_average:,.2f}. ")
-        if abs(calculated_average - reported_average) < 1.0:
-            check2_para.add_run("✓ MATCH - Calculation consistent.").bold = True
-        else:
-            check2_para.add_run(f"✗ DISCREPANCY of ${abs(calculated_average - reported_average):,.2f} - Requires review.").bold = True
-        
-        doc.add_paragraph()
-        
-        # Check 3: Schedule summary vs detailed totals verification WITH ACTUAL COMPARISON
-        check3_para = doc.add_paragraph()
-        check3_para.add_run("Check 3 - Schedule Summary vs Detailed Breakdown: ").bold = True
-        
-        # Recalculate detailed year totals and compare with schedule
-        schedule_df = self.calculator.build_cost_schedule()
-        detailed_year_totals = {}
-        
-        for year in years:
-            year_total = 0
-            for table_name, table in self.lcp.tables.items():
-                for service in table.services:
-                    service_cost = self.calculator.calculate_service_cost(service, year)
-                    year_total += float(service_cost)
-            detailed_year_totals[year] = year_total
-        
-        # Compare a few key years
-        test_years = [years[0], years[len(years)//4], years[len(years)//2], years[-5], years[-1]] if len(years) >= 5 else years[:3]
-        max_discrepancy = 0
-        all_match = True
-        
-        for test_year in test_years:
-            schedule_row = schedule_df[schedule_df['Year'] == test_year]
-            if not schedule_row.empty:
-                schedule_total = schedule_row['Total Nominal'].iloc[0]
-                detailed_total = detailed_year_totals[test_year]
-                discrepancy = abs(schedule_total - detailed_total)
-                max_discrepancy = max(max_discrepancy, discrepancy)
-                
-                if discrepancy > 1.0:
-                    all_match = False
-                    check3_para.add_run(f"Year {test_year}: Schedule=${schedule_total:,.0f}, Detailed=${detailed_total:,.0f}, Δ=${discrepancy:,.0f}. ")
-        
-        if all_match:
-            check3_para.add_run("✓ MATCH - All tested years match between Schedule Summary and Detailed Breakdown.").bold = True
-        else:
-            check3_para.add_run(f"✗ DISCREPANCY - Maximum difference of ${max_discrepancy:,.0f} found between sections.").bold = True
-        
-        doc.add_paragraph()
-        
-        # Check 4: Total verification across all sections
-        schedule_total_sum = schedule_df['Total Nominal'].sum()
-        detailed_total_sum = sum(detailed_year_totals.values())
-        
-        check4_para = doc.add_paragraph()
-        check4_para.add_run("Check 4 - Total Sum Verification: ").bold = True
-        projection_years = self.lcp.settings.projection_years
-        check4_para.add_run(f"Schedule {projection_years:.1f}-year sum: ${schedule_total_sum:,.2f}. ")
-        check4_para.add_run(f"Detailed {projection_years:.1f}-year sum: ${detailed_total_sum:,.2f}. ")
-        check4_para.add_run(f"Executive total: ${executive_total:,.2f}. ")
-        
-        if (abs(schedule_total_sum - detailed_total_sum) < 1.0 and 
-            abs(schedule_total_sum - executive_total) < 1.0):
-            check4_para.add_run("✓ ALL MATCH - Perfect reconciliation across all sections.").bold = True
-        else:
-            check4_para.add_run("✗ DISCREPANCY - Requires immediate correction.").bold = True
-        
-        doc.add_paragraph()
-        
-        # Check 5: Quality Control Matrix Validation (Audit Template)
-        check5_para = doc.add_paragraph()
-        check5_para.add_run("Check 5 - Quality Control Matrix Validation: ").bold = True
-        
-        qc_validation = self.calculator.quality_control_validation()
-        check5_para.add_run(f"Matrix reconciliation test: ")
-        
-        if qc_validation['reconciliation_passes']:
-            check5_para.add_run(f"✓ PASS - Discrepancy of ${qc_validation['discrepancy']:.2f} (< $1.00).").bold = True
-        else:
-            check5_para.add_run(f"✗ FAIL - Discrepancy of ${qc_validation['discrepancy']:.2f} exceeds $1.00 tolerance.").bold = True
-        
-        check5_para.add_run(f" Sum of lifetime costs: ${qc_validation['sum_lifetime_costs']:,.2f}. ")
-        check5_para.add_run(f"Sum of annual schedule: ${qc_validation['sum_annual_schedule']:,.2f}.")
-        
-        doc.add_paragraph()
-        
-        # Matrix validation explanation
-        matrix_para = doc.add_paragraph()
-        matrix_para.add_run("Matrix Validation Method: ").bold = True
-        matrix_para.add_run("This test implements the audit-recommended quality control template: ")
-        matrix_para.add_run("(1) Extract service master table; ")
-        matrix_para.add_run("(2) Generate yearly cost matrices using Cost[year,service] = UnitCost × Frequency × (1+inflation)^years; ")
-        matrix_para.add_run("(3) Calculate row-sums (annual totals) and column-sums (lifetime costs); ")
-        matrix_para.add_run("(4) Verify absolute difference < $1.00. ")
-        matrix_para.add_run("This ensures mathematical lock-step across all presentation layers.")
-        
-        doc.add_paragraph()
-        
-        # Mathematical accuracy statement
-        accuracy_para = doc.add_paragraph()
-        accuracy_para.add_run("Mathematical Accuracy Statement: ").bold = True
-        accuracy_para.add_run("All calculations in this report use established financial mathematics with consistent ")
-        accuracy_para.add_run("inflation compounding and present value discounting. Rounding is applied consistently ")
-        accuracy_para.add_run("to the nearest cent. All computational methods are reproducible and subject to ")
-        accuracy_para.add_run("independent verification through cross-examination.")
         
         # Add spacing after table
         doc.add_paragraph()
@@ -2032,10 +1880,7 @@ class WordExporter:
         
         doc.add_paragraph()
         
-        # Add all technical sections
-        self._add_calculation_methodology_section(doc)
-        
-        doc.add_page_break()
+        # Calculation methodology section removed per user request
         
         # Add comprehensive validation results
         doc.add_heading("Comprehensive Validation Results", level=2)
@@ -2470,6 +2315,237 @@ class WordExporter:
         rec_para.add_run("Recommended Actions:").bold = True
         for i, recommendation in enumerate(variance_results['recommendations'], 1):
             rec_para.add_run(f"\n{i}. {recommendation}")
+
+    def export_combined_scenarios(self, file_path: str, selected_scenarios: list) -> None:
+        """Export all selected scenarios combined into a single Word document format."""
+        doc = Document()
+
+        # Set document to landscape orientation
+        section = doc.sections[0]
+        section.orientation = WD_ORIENT.LANDSCAPE
+        new_width, new_height = section.page_height, section.page_width
+        section.page_width = new_width
+        section.page_height = new_height
+
+        # Adjust margins for better table fit
+        section.left_margin = Inches(0.5)
+        section.right_margin = Inches(0.5)
+        section.top_margin = Inches(0.75)
+        section.bottom_margin = Inches(0.75)
+
+        # Main title
+        title = doc.add_heading("LIFE CARE PLAN - COMBINED SCENARIOS", level=1)
+        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        # Subtitle
+        subtitle = doc.add_heading("Comprehensive Economic Analysis for Multiple Scenarios", level=2)
+        subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        doc.add_paragraph()
+        
+        # Evaluee information
+        evaluee_para = doc.add_paragraph()
+        evaluee_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        evaluee_para.add_run("Prepared for: ").bold = True
+        evaluee_para.add_run(f"{self.lcp.evaluee.name}").bold = True
+        
+        doc.add_paragraph()
+        
+        # Scenarios included
+        scenarios_para = doc.add_paragraph()
+        scenarios_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        scenarios_para.add_run("Scenarios Included: ").bold = True
+        scenarios_para.add_run(", ".join(selected_scenarios))
+        
+        doc.add_paragraph()
+
+        # Store original active scenario
+        original_active = self.lcp.active_scenario
+        
+        try:
+            # Process each scenario
+            for i, scenario_name in enumerate(selected_scenarios):
+                # Set active scenario
+                self.lcp.set_active_scenario(scenario_name)
+                
+                # Add scenario section
+                if i > 0:
+                    doc.add_page_break()
+                
+                scenario_heading = doc.add_heading(f"SCENARIO: {scenario_name.upper()}", level=2)
+                scenario_heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                
+                # Get scenario info
+                scenario = self.lcp.scenarios[scenario_name]
+                if scenario.description:
+                    desc_para = doc.add_paragraph()
+                    desc_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    desc_para.add_run("Description: ").bold = True
+                    desc_para.add_run(scenario.description)
+                    doc.add_paragraph()
+                
+                # Add all the standard sections for this scenario
+                self._add_scenario_executive_summary(doc)
+                self._add_scenario_cost_breakdown(doc)
+                self._add_scenario_detailed_schedule(doc)
+                
+        finally:
+            # Restore original active scenario
+            self.lcp.set_active_scenario(original_active)
+        
+        doc.save(file_path)
+
+    def _add_scenario_executive_summary(self, doc):
+        """Add executive summary section for current scenario."""
+        doc.add_heading("Executive Summary", level=3)
+        
+        summary_stats = self.calculator.calculate_summary_statistics()
+        
+        # Document information table
+        info_table = doc.add_table(rows=6, cols=2)
+        info_table.style = 'Light List'
+        
+        info_data = [
+            ["Analysis Date:", datetime.now().strftime('%B %d, %Y')],
+            ["Current Age:", f"{self.lcp.evaluee.current_age:.1f} years"],
+            ["Base Year:", str(int(self.lcp.settings.base_year))],
+            ["Projection Period:", f"{self.lcp.settings.projection_years:.1f} years"],
+            ["Total Nominal Cost:", f"${summary_stats['total_nominal_cost']:,.2f}"],
+            ["Average Annual Cost:", f"${summary_stats['average_annual_cost']:,.2f}"]
+        ]
+        
+        # Add present value info if enabled
+        if self.lcp.evaluee.discount_calculations and self.lcp.settings.discount_rate > 0:
+            info_data.append(["Total Present Value:", f"${summary_stats['total_present_value']:,.2f}"])
+            info_data.append(["Discount Rate:", f"{self.lcp.settings.discount_rate:.1%}"])
+        
+        for i, (label, value) in enumerate(info_data):
+            if i < len(info_table.rows):
+                row_cells = info_table.rows[i].cells
+            else:
+                row_cells = info_table.add_row().cells
+                
+            row_cells[0].text = label
+            row_cells[0].paragraphs[0].runs[0].bold = True
+            row_cells[1].text = value
+        
+        doc.add_paragraph()
+
+    def _add_scenario_cost_breakdown(self, doc):
+        """Add cost breakdown by category for current scenario."""
+        doc.add_heading("Cost Breakdown by Category", level=3)
+        
+        category_costs = self.calculator.get_cost_by_category()
+        show_present_value = self.lcp.evaluee.discount_calculations and self.lcp.settings.discount_rate > 0
+        
+        # Create category table
+        cols = 3 if show_present_value else 2
+        headers = ['Service Category', 'Total Nominal Cost']
+        if show_present_value:
+            headers.append('Total Present Value')
+        
+        category_table = doc.add_table(rows=1, cols=cols)
+        category_table.style = 'Light List'
+        category_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        
+        # Header row
+        hdr_cells = category_table.rows[0].cells
+        for idx, header in enumerate(headers):
+            hdr_cells[idx].text = header
+            hdr_cells[idx].paragraphs[0].runs[0].bold = True
+            hdr_cells[idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        # Data rows
+        total_nominal = 0
+        total_pv = 0
+        
+        for category_name, costs in category_costs.items():
+            row_cells = category_table.add_row().cells
+            row_cells[0].text = category_name
+            row_cells[1].text = f"${costs['table_nominal_total']:,.2f}"
+            
+            if show_present_value:
+                row_cells[2].text = f"${costs['table_present_value_total']:,.2f}"
+            
+            total_nominal += costs['table_nominal_total']
+            total_pv += costs['table_present_value_total']
+            
+            # Format cells
+            for cell in row_cells[1:]:
+                cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        
+        # Total row
+        total_cells = category_table.add_row().cells
+        total_cells[0].text = "TOTAL"
+        total_cells[0].paragraphs[0].runs[0].bold = True
+        total_cells[1].text = f"${total_nominal:,.2f}"
+        total_cells[1].paragraphs[0].runs[0].bold = True
+        total_cells[1].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        
+        if show_present_value:
+            total_cells[2].text = f"${total_pv:,.2f}"
+            total_cells[2].paragraphs[0].runs[0].bold = True
+            total_cells[2].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        
+        doc.add_paragraph()
+
+    def _add_scenario_detailed_schedule(self, doc):
+        """Add detailed year-by-year schedule for current scenario."""
+        doc.add_heading("Detailed Year-by-Year Cost Schedule", level=3)
+        
+        # Build cost schedule
+        df = self.calculator.build_cost_schedule()
+        show_present_value = self.lcp.evaluee.discount_calculations and self.lcp.settings.discount_rate > 0
+        
+        # Create table
+        base_cols = ['Year', 'Age', 'Total Nominal']
+        if show_present_value:
+            base_cols.append('Present Value')
+        
+        num_cols = len(base_cols)
+        schedule_table = doc.add_table(rows=1, cols=num_cols)
+        schedule_table.style = 'Light List'
+        schedule_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+        
+        # Header row
+        hdr_cells = schedule_table.rows[0].cells
+        for idx, header in enumerate(base_cols):
+            hdr_cells[idx].text = header
+            hdr_cells[idx].paragraphs[0].runs[0].bold = True
+            hdr_cells[idx].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        # Data rows (show first 15 years, then summary)
+        years_to_show = min(15, len(df))
+        
+        for i in range(years_to_show):
+            row = df.iloc[i]
+            row_cells = schedule_table.add_row().cells
+            
+            row_cells[0].text = str(int(row['Year']))
+            row_cells[1].text = f"{row['Age']:.1f}"
+            row_cells[2].text = f"${row['Total Nominal']:,.0f}"
+            
+            if show_present_value and 'Present Value' in df.columns:
+                row_cells[3].text = f"${row['Present Value']:,.0f}"
+            
+            # Format
+            for cell in row_cells[2:]:
+                cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        
+        # Summary row if more years exist
+        if len(df) > years_to_show:
+            summary_cells = schedule_table.add_row().cells
+            summary_cells[0].text = "..."
+            summary_cells[1].text = "..."
+            remaining_years = len(df) - years_to_show
+            remaining_nominal = df.iloc[years_to_show:]['Total Nominal'].sum()
+            summary_cells[2].text = f"${remaining_nominal:,.0f} ({remaining_years} more years)"
+            
+            if show_present_value and 'Present Value' in df.columns:
+                remaining_pv = df.iloc[years_to_show:]['Present Value'].sum()
+                summary_cells[3].text = f"${remaining_pv:,.0f}"
+        
+        doc.add_paragraph()
 
 
 class PDFExporter:
