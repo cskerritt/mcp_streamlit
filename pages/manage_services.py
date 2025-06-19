@@ -8,6 +8,104 @@ from datetime import datetime
 from src.models import ServiceTable, Service
 from src.database import db
 
+def calculate_age_for_year(base_year: int, current_age: float, target_year: int) -> float:
+    """Calculate the age of the evaluee in a given year."""
+    return current_age + (target_year - base_year)
+
+def display_age_info(years, evaluee_current_age: float, base_year: int):
+    """Display age information for given years."""
+    if isinstance(years, (list, tuple)) and len(years) > 0:
+        if len(years) == 1:
+            age = calculate_age_for_year(base_year, evaluee_current_age, years[0])
+            st.caption(f"📅 Age in {years[0]}: **{age:.1f} years old**")
+        else:
+            ages_info = []
+            for year in sorted(years):
+                age = calculate_age_for_year(base_year, evaluee_current_age, year)
+                ages_info.append(f"{year} (age {age:.1f})")
+            st.caption(f"📅 Ages: {', '.join(ages_info)}")
+    elif isinstance(years, int):
+        age = calculate_age_for_year(base_year, evaluee_current_age, years)
+        st.caption(f"📅 Age in {years}: **{age:.1f} years old**")
+
+def get_service_years(service):
+    """Get all years when a service occurs."""
+    years = set()
+    
+    if service.is_one_time_cost and service.one_time_cost_year:
+        years.add(service.one_time_cost_year)
+    elif service.occurrence_years:
+        years.update(service.occurrence_years)
+    elif service.start_year and service.end_year:
+        years.update(range(service.start_year, service.end_year + 1))
+    elif hasattr(service, 'is_distributed_instances') and service.is_distributed_instances:
+        if service.start_year and service.distribution_period_years:
+            end_year = int(service.start_year + service.distribution_period_years)
+            years.update(range(service.start_year, end_year + 1))
+    
+    return sorted(years)
+
+def check_service_overlaps(new_service_data, table_name, exclude_service_index=None):
+    """Check for overlaps between a new/edited service and existing services in the same table."""
+    overlaps = []
+    
+    if table_name not in st.session_state.lcp_data.tables:
+        return overlaps
+    
+    table = st.session_state.lcp_data.tables[table_name]
+    
+    # Get years for the new/edited service
+    new_years = set()
+    
+    if new_service_data.get('is_one_time_cost') and new_service_data.get('one_time_cost_year'):
+        new_years.add(new_service_data['one_time_cost_year'])
+    elif new_service_data.get('occurrence_years'):
+        new_years.update(new_service_data['occurrence_years'])
+    elif new_service_data.get('start_year') and new_service_data.get('end_year'):
+        new_years.update(range(new_service_data['start_year'], new_service_data['end_year'] + 1))
+    elif new_service_data.get('is_distributed_instances'):
+        if new_service_data.get('start_year') and new_service_data.get('distribution_period_years'):
+            end_year = int(new_service_data['start_year'] + new_service_data['distribution_period_years'])
+            new_years.update(range(new_service_data['start_year'], end_year + 1))
+    
+    # Check against existing services
+    for i, existing_service in enumerate(table.services):
+        if exclude_service_index is not None and i == exclude_service_index:
+            continue  # Skip the service being edited
+            
+        existing_years = set(get_service_years(existing_service))
+        overlap_years = new_years.intersection(existing_years)
+        
+        if overlap_years:
+            overlaps.append({
+                'service_name': existing_service.name,
+                'service_index': i,
+                'overlap_years': sorted(overlap_years)
+            })
+    
+    return overlaps
+
+def display_overlap_warnings(overlaps, new_service_name):
+    """Display warnings for overlapping services."""
+    if overlaps:
+        st.warning("⚠️ **Service Overlap Detected!**")
+        st.markdown("The following existing services overlap with your new service:")
+        
+        for overlap in overlaps:
+            years_str = ', '.join(map(str, overlap['overlap_years']))
+            if len(overlap['overlap_years']) > 5:  # Truncate if too many years
+                years_str = ', '.join(map(str, overlap['overlap_years'][:5])) + f"... ({len(overlap['overlap_years'])} total years)"
+            
+            st.error(f"🔴 **{overlap['service_name']}** overlaps in years: {years_str}")
+        
+        st.markdown("**Recommendations:**")
+        st.markdown("- Adjust the years for one of the services")
+        st.markdown("- Consider if both services are truly needed simultaneously")
+        st.markdown("- Review if this overlap is intentional (e.g., multiple therapy types)")
+        
+        return True
+    return False
+
 def show_manage_services_page():
     """Display the manage service tables page."""
     st.title("📋 Manage Service Tables")
@@ -23,7 +121,7 @@ def show_manage_services_page():
     st.markdown(f"Managing services for: **{st.session_state.lcp_data.evaluee.name}**")
     
     # Tabs for different operations
-    tab1, tab2, tab3 = st.tabs(["📋 View Tables", "➕ Add Table", "🔧 Add/Edit Services"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📋 View Tables", "➕ Add Table", "🔧 Add/Edit Services", "🌐 Unified View"])
     
     with tab1:
         show_tables_overview()
@@ -33,6 +131,9 @@ def show_manage_services_page():
     
     with tab3:
         show_service_management()
+    
+    with tab4:
+        show_unified_view_edit()
 
 def show_tables_overview():
     """Show overview of all service tables."""
@@ -327,6 +428,14 @@ def show_add_service_form(table: ServiceTable):
                     value=st.session_state.lcp_data.settings.base_year,
                     step=1
                 )
+                # Display age for start year
+                start_age = calculate_age_for_year(
+                    st.session_state.lcp_data.settings.base_year,
+                    st.session_state.lcp_data.evaluee.current_age,
+                    start_year
+                )
+                st.caption(f"📅 Starting age: **{start_age:.1f} years old**")
+                
             with col2:
                 end_year = st.number_input(
                     "End Year",
@@ -334,6 +443,18 @@ def show_add_service_form(table: ServiceTable):
                     value=int(st.session_state.lcp_data.settings.base_year + st.session_state.lcp_data.settings.projection_years) - 1,
                     step=1
                 )
+                # Display age for end year
+                end_age = calculate_age_for_year(
+                    st.session_state.lcp_data.settings.base_year,
+                    st.session_state.lcp_data.evaluee.current_age,
+                    end_year
+                )
+                st.caption(f"📅 Ending age: **{end_age:.1f} years old**")
+            
+            # Display service duration
+            if end_year > start_year:
+                duration = end_year - start_year + 1
+                st.info(f"⏱️ Service duration: **{duration} years** (age {start_age:.1f} to {end_age:.1f})")
 
         elif service_type == "Discrete Occurrences":
             occurrence_years_str = st.text_input(
@@ -341,6 +462,18 @@ def show_add_service_form(table: ServiceTable):
                 placeholder="e.g., 2025, 2030, 2035",
                 help="Comma-separated list of years when this service occurs"
             )
+            
+            # Display ages for entered years
+            if occurrence_years_str:
+                try:
+                    occurrence_years = [int(year.strip()) for year in occurrence_years_str.split(',')]
+                    display_age_info(
+                        occurrence_years,
+                        st.session_state.lcp_data.evaluee.current_age,
+                        st.session_state.lcp_data.settings.base_year
+                    )
+                except ValueError:
+                    st.warning("Please enter valid years separated by commas")
 
         elif service_type == "Specific Years":
             st.markdown("**Select Specific Years:**")
@@ -363,6 +496,12 @@ def show_add_service_form(table: ServiceTable):
 
             if selected_years:
                 st.info(f"Selected {len(selected_years)} years: {', '.join(map(str, sorted(selected_years)))}")
+                # Display ages for selected years
+                display_age_info(
+                    selected_years,
+                    st.session_state.lcp_data.evaluee.current_age,
+                    st.session_state.lcp_data.settings.base_year
+                )
 
         elif service_type == "Distributed Instances":
             st.markdown("**Total Instances Spread Over Period:**")
@@ -406,12 +545,32 @@ def show_add_service_form(table: ServiceTable):
                 help="Year when the distributed instances begin"
             )
             
+            # Display age information for distribution period
+            distribution_end_year = distribution_start_year + distribution_period
+            start_age = calculate_age_for_year(
+                st.session_state.lcp_data.settings.base_year,
+                st.session_state.lcp_data.evaluee.current_age,
+                distribution_start_year
+            )
+            end_age = calculate_age_for_year(
+                st.session_state.lcp_data.settings.base_year,
+                st.session_state.lcp_data.evaluee.current_age,
+                int(distribution_end_year)
+            )
+            st.caption(f"📅 Distribution period: Age {start_age:.1f} to {end_age:.1f} ({distribution_start_year} to {distribution_end_year:.1f})")
+            
         else:  # One-time cost
             one_time_year = st.number_input(
                 "Year of Occurrence",
                 min_value=st.session_state.lcp_data.settings.base_year,
                 value=st.session_state.lcp_data.settings.base_year,
                 step=1
+            )
+            # Display age for one-time cost year
+            display_age_info(
+                one_time_year,
+                st.session_state.lcp_data.evaluee.current_age,
+                st.session_state.lcp_data.settings.base_year
             )
         
         submitted = st.form_submit_button("➕ Add Service", use_container_width=True)
@@ -420,6 +579,47 @@ def show_add_service_form(table: ServiceTable):
             if not service_name.strip():
                 st.error("Please enter a service name.")
                 return
+            
+            # Prepare service data for overlap checking
+            overlap_check_data = {
+                "name": service_name.strip(),
+                "start_year": None,
+                "end_year": None,
+                "occurrence_years": None,
+                "is_one_time_cost": False,
+                "one_time_cost_year": None,
+                "is_distributed_instances": False,
+                "distribution_period_years": None
+            }
+            
+            # Set timing data based on service type
+            if service_type == "Recurring":
+                overlap_check_data["start_year"] = start_year
+                overlap_check_data["end_year"] = end_year
+            elif service_type == "Discrete Occurrences":
+                if occurrence_years_str:
+                    try:
+                        overlap_check_data["occurrence_years"] = [int(year.strip()) for year in occurrence_years_str.split(',')]
+                    except ValueError:
+                        st.error("Please enter valid years separated by commas.")
+                        return
+            elif service_type == "Specific Years":
+                overlap_check_data["occurrence_years"] = selected_years
+            elif service_type == "Distributed Instances":
+                overlap_check_data["is_distributed_instances"] = True
+                overlap_check_data["start_year"] = distribution_start_year
+                overlap_check_data["distribution_period_years"] = distribution_period
+            else:  # One-time cost
+                overlap_check_data["is_one_time_cost"] = True
+                overlap_check_data["one_time_cost_year"] = one_time_year
+            
+            # Check for overlaps
+            overlaps = check_service_overlaps(overlap_check_data, selected_table)
+            
+            # Display overlap warnings but allow user to proceed
+            if overlaps:
+                display_overlap_warnings(overlaps, service_name.strip())
+                st.info("ℹ️ You can still add this service if the overlap is intentional.")
             
             try:
                 # Base service parameters
@@ -602,6 +802,12 @@ def show_edit_service_form(table: ServiceTable, service_index: int, service: Ser
         if service.is_one_time_cost:
             st.write("**Current Type:** One-time Cost")
             one_time_year = st.number_input("Year of Occurrence", value=int(service.one_time_cost_year) if service.one_time_cost_year else 2025, step=1)
+            # Display age for one-time cost year
+            display_age_info(
+                one_time_year,
+                st.session_state.lcp_data.evaluee.current_age,
+                st.session_state.lcp_data.settings.base_year
+            )
         elif service.occurrence_years:
             st.write("**Current Type:** Discrete Occurrences / Specific Years")
 
@@ -619,6 +825,17 @@ def show_edit_service_form(table: ServiceTable, service_index: int, service: Ser
                     value=", ".join(map(str, service.occurrence_years)),
                     help="Comma-separated list of years"
                 )
+                # Display ages for entered years
+                if occurrence_years_str:
+                    try:
+                        occurrence_years = [int(year.strip()) for year in occurrence_years_str.split(',')]
+                        display_age_info(
+                            occurrence_years,
+                            st.session_state.lcp_data.evaluee.current_age,
+                            st.session_state.lcp_data.settings.base_year
+                        )
+                    except ValueError:
+                        st.warning("Please enter valid years separated by commas")
             else:
                 # Multi-select for years
                 base_year = st.session_state.lcp_data.settings.base_year
@@ -633,13 +850,39 @@ def show_edit_service_form(table: ServiceTable, service_index: int, service: Ser
                     default=service.occurrence_years,
                     help="Select all years when this service will occur"
                 )
+                # Display ages for selected years
+                if selected_years:
+                    display_age_info(
+                        selected_years,
+                        st.session_state.lcp_data.evaluee.current_age,
+                        st.session_state.lcp_data.settings.base_year
+                    )
         else:
             st.write("**Current Type:** Recurring")
             col1, col2 = st.columns(2)
             with col1:
                 start_year = st.number_input("Start Year", value=int(service.start_year) if service.start_year else 2025, step=1)
+                # Display age for start year
+                start_age = calculate_age_for_year(
+                    st.session_state.lcp_data.settings.base_year,
+                    st.session_state.lcp_data.evaluee.current_age,
+                    start_year
+                )
+                st.caption(f"📅 Starting age: **{start_age:.1f} years old**")
             with col2:
                 end_year = st.number_input("End Year", value=int(service.end_year) if service.end_year else 2030, step=1)
+                # Display age for end year
+                end_age = calculate_age_for_year(
+                    st.session_state.lcp_data.settings.base_year,
+                    st.session_state.lcp_data.evaluee.current_age,
+                    end_year
+                )
+                st.caption(f"📅 Ending age: **{end_age:.1f} years old**")
+            
+            # Display service duration
+            if end_year > start_year:
+                duration = end_year - start_year + 1
+                st.info(f"⏱️ Service duration: **{duration} years** (age {start_age:.1f} to {end_age:.1f})")
         
         col1, col2 = st.columns(2)
         with col1:
@@ -696,3 +939,296 @@ def show_edit_service_form(table: ServiceTable, service_index: int, service: Ser
             if st.form_submit_button("❌ Cancel", use_container_width=True):
                 del st.session_state[f"editing_service_{service_index}"]
                 st.rerun()
+
+def show_unified_view_edit():
+    """Show unified view of all tables and services with inline editing capabilities."""
+    st.subheader("🌐 Unified View - All Tables & Services")
+    st.markdown("View and edit all your service tables and services from one comprehensive interface.")
+    
+    # Check if we have any tables
+    if not st.session_state.lcp_data.tables:
+        st.info("No service tables created yet. Use the 'Add Table' tab to create your first table.")
+        return
+    
+    # Get all services across all tables for overview
+    all_services = []
+    for table_name, table in st.session_state.lcp_data.tables.items():
+        for i, service in enumerate(table.services):
+            service_years = get_service_years(service)
+            all_services.append({
+                'table_name': table_name,
+                'service_name': service.name,
+                'service_index': i,
+                'service_obj': service,
+                'unit_cost': service.unit_cost,
+                'frequency': service.frequency_per_year,
+                'inflation_rate': service.inflation_rate * 100,
+                'years': service_years,
+                'year_range': f"{min(service_years)}-{max(service_years)}" if service_years else "None",
+                'total_years': len(service_years),
+                'service_type': "One-time" if service.is_one_time_cost else ("Distributed" if hasattr(service, 'is_distributed_instances') and service.is_distributed_instances else ("Discrete" if service.occurrence_years else "Recurring"))
+            })
+    
+    if not all_services:
+        st.info("No services found. Add services to your tables using the 'Add/Edit Services' tab.")
+        return
+    
+    # Summary statistics
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Total Tables", len(st.session_state.lcp_data.tables))
+    with col2:
+        st.metric("Total Services", len(all_services))
+    with col3:
+        total_cost = sum(s['unit_cost'] * s['frequency'] for s in all_services)
+        st.metric("Total Annual Cost", f"${total_cost:,.0f}")
+    with col4:
+        avg_inflation = sum(s['inflation_rate'] for s in all_services) / len(all_services)
+        st.metric("Avg Inflation", f"{avg_inflation:.1f}%")
+    
+    st.markdown("---")
+    
+    # Filters and search
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        search_term = st.text_input("🔍 Search services:", placeholder="Enter service or table name")
+    with col2:
+        filter_table = st.selectbox("Filter by table:", ["All Tables"] + list(st.session_state.lcp_data.tables.keys()))
+    with col3:
+        filter_type = st.selectbox("Filter by type:", ["All Types", "Recurring", "One-time", "Discrete", "Distributed"])
+    
+    # Apply filters
+    filtered_services = all_services
+    if search_term:
+        filtered_services = [s for s in filtered_services if 
+                           search_term.lower() in s['service_name'].lower() or 
+                           search_term.lower() in s['table_name'].lower()]
+    if filter_table != "All Tables":
+        filtered_services = [s for s in filtered_services if s['table_name'] == filter_table]
+    if filter_type != "All Types":
+        filtered_services = [s for s in filtered_services if s['service_type'] == filter_type]
+    
+    st.markdown(f"### Found {len(filtered_services)} services")
+    
+    if not filtered_services:
+        st.warning("No services match your filters.")
+        return
+    
+    # Quick edit options
+    st.markdown("#### Quick Actions")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if st.button("📈 Bulk Inflation Update", use_container_width=True):
+            st.session_state.show_bulk_inflation = True
+    with col2:
+        if st.button("📅 Detect All Overlaps", use_container_width=True):
+            show_all_overlaps()
+    with col3:
+        if st.button("💾 Export Service List", use_container_width=True):
+            show_export_service_list(filtered_services)
+    
+    # Bulk inflation update
+    if st.session_state.get('show_bulk_inflation', False):
+        st.markdown("#### 📈 Bulk Inflation Rate Update")
+        with st.form("bulk_inflation_form"):
+            col1, col2, col3 = st.columns([2, 1, 1])
+            with col1:
+                new_inflation = st.number_input("New inflation rate (%):", value=3.5, min_value=0.0, max_value=20.0, step=0.1)
+            with col2:
+                apply_to = st.selectbox("Apply to:", ["All Services", "Selected Table Only"])
+            with col3:
+                target_table = st.selectbox("Target table:", list(st.session_state.lcp_data.tables.keys())) if apply_to == "Selected Table Only" else None
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.form_submit_button("✅ Update Inflation", use_container_width=True):
+                    update_count = 0
+                    for service_data in filtered_services:
+                        if apply_to == "All Services" or service_data['table_name'] == target_table:
+                            service_data['service_obj'].inflation_rate = new_inflation / 100
+                            update_count += 1
+                    
+                    # Auto-save if enabled
+                    if st.session_state.get('auto_save', True):
+                        try:
+                            db.save_life_care_plan(st.session_state.lcp_data)
+                            st.session_state.last_saved = datetime.now().strftime("%H:%M:%S")
+                        except Exception as e:
+                            st.warning(f"Auto-save failed: {str(e)}")
+                    
+                    st.success(f"✅ Updated inflation rate for {update_count} services to {new_inflation}%")
+                    st.session_state.show_bulk_inflation = False
+                    st.rerun()
+            
+            with col2:
+                if st.form_submit_button("❌ Cancel", use_container_width=True):
+                    st.session_state.show_bulk_inflation = False
+                    st.rerun()
+    
+    st.markdown("---")
+    
+    # Detailed service list with inline editing
+    st.markdown("#### 📋 Service Details")
+    
+    # Group services by table for better organization
+    services_by_table = {}
+    for service in filtered_services:
+        table_name = service['table_name']
+        if table_name not in services_by_table:
+            services_by_table[table_name] = []
+        services_by_table[table_name].append(service)
+    
+    for table_name, table_services in services_by_table.items():
+        with st.expander(f"📋 {table_name} ({len(table_services)} services)", expanded=True):
+            
+            for service_data in table_services:
+                service = service_data['service_obj']
+                service_index = service_data['service_index']
+                
+                # Create columns for service display
+                col1, col2, col3, col4, col5 = st.columns([3, 2, 2, 2, 1])
+                
+                with col1:
+                    st.markdown(f"**{service.name}**")
+                    # Show age information for service years
+                    if service_data['years']:
+                        if len(service_data['years']) <= 3:
+                            ages = [calculate_age_for_year(st.session_state.lcp_data.settings.base_year, 
+                                                         st.session_state.lcp_data.evaluee.current_age, year) 
+                                   for year in service_data['years']]
+                            age_str = ', '.join([f"Age {age:.1f}" for age in ages])
+                            st.caption(f"📅 {service_data['year_range']} ({age_str})")
+                        else:
+                            start_age = calculate_age_for_year(st.session_state.lcp_data.settings.base_year, 
+                                                             st.session_state.lcp_data.evaluee.current_age, 
+                                                             min(service_data['years']))
+                            end_age = calculate_age_for_year(st.session_state.lcp_data.settings.base_year, 
+                                                           st.session_state.lcp_data.evaluee.current_age, 
+                                                           max(service_data['years']))
+                            st.caption(f"📅 {service_data['year_range']} (Age {start_age:.1f} to {end_age:.1f})")
+                
+                with col2:
+                    st.write(f"**${service.unit_cost:,.2f}**")
+                    st.caption(f"{service.frequency_per_year:.1f}/year")
+                
+                with col3:
+                    st.write(f"**{service.inflation_rate*100:.1f}%**")
+                    st.caption(f"{service_data['service_type']}")
+                
+                with col4:
+                    annual_cost = service.unit_cost * service.frequency_per_year
+                    st.write(f"**${annual_cost:,.0f}**/year")
+                    st.caption(f"{service_data['total_years']} years")
+                
+                with col5:
+                    edit_key = f"edit_unified_{table_name}_{service_index}"
+                    if st.button("✏️", key=edit_key, help="Quick edit"):
+                        st.session_state[f"editing_unified_{table_name}_{service_index}"] = True
+                        st.rerun()
+                
+                # Quick edit form
+                if st.session_state.get(f"editing_unified_{table_name}_{service_index}", False):
+                    with st.form(f"quick_edit_{table_name}_{service_index}"):
+                        st.markdown(f"**Quick Edit: {service.name}**")
+                        
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            new_cost = st.number_input("Unit Cost ($):", value=float(service.unit_cost), min_value=0.0)
+                        with col2:
+                            new_freq = st.number_input("Frequency/Year:", value=float(service.frequency_per_year), min_value=0.1)
+                        with col3:
+                            new_inflation = st.number_input("Inflation (%):", value=float(service.inflation_rate * 100), min_value=0.0, max_value=20.0)
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.form_submit_button("💾 Save", use_container_width=True):
+                                service.unit_cost = new_cost
+                                service.frequency_per_year = new_freq
+                                service.inflation_rate = new_inflation / 100
+                                
+                                # Auto-save if enabled
+                                if st.session_state.get('auto_save', True):
+                                    try:
+                                        db.save_life_care_plan(st.session_state.lcp_data)
+                                        st.session_state.last_saved = datetime.now().strftime("%H:%M:%S")
+                                    except Exception as e:
+                                        st.warning(f"Auto-save failed: {str(e)}")
+                                
+                                st.success("✅ Service updated!")
+                                del st.session_state[f"editing_unified_{table_name}_{service_index}"]
+                                st.rerun()
+                        
+                        with col2:
+                            if st.form_submit_button("❌ Cancel", use_container_width=True):
+                                del st.session_state[f"editing_unified_{table_name}_{service_index}"]
+                                st.rerun()
+                
+                st.markdown("---")
+
+def show_all_overlaps():
+    """Detect and display all service overlaps across all tables."""
+    st.markdown("#### 🔍 Service Overlap Analysis")
+    
+    overlaps_found = []
+    
+    # Check each table for internal overlaps
+    for table_name, table in st.session_state.lcp_data.tables.items():
+        for i, service1 in enumerate(table.services):
+            years1 = set(get_service_years(service1))
+            
+            for j, service2 in enumerate(table.services[i+1:], i+1):
+                years2 = set(get_service_years(service2))
+                overlap_years = years1.intersection(years2)
+                
+                if overlap_years:
+                    overlaps_found.append({
+                        'table': table_name,
+                        'service1': service1.name,
+                        'service2': service2.name,
+                        'overlap_years': sorted(overlap_years)
+                    })
+    
+    if overlaps_found:
+        st.warning(f"⚠️ Found {len(overlaps_found)} service overlaps:")
+        
+        for overlap in overlaps_found:
+            years_str = ', '.join(map(str, overlap['overlap_years'][:5]))
+            if len(overlap['overlap_years']) > 5:
+                years_str += f"... ({len(overlap['overlap_years'])} total years)"
+            
+            st.error(f"**{overlap['table']}**: {overlap['service1']} ↔ {overlap['service2']} (Years: {years_str})")
+    else:
+        st.success("✅ No service overlaps detected!")
+
+def show_export_service_list(services):
+    """Show export options for the service list."""
+    st.markdown("#### 💾 Export Service List")
+    
+    # Create DataFrame for export
+    export_data = []
+    for service in services:
+        export_data.append({
+            'Table': service['table_name'],
+            'Service': service['service_name'],
+            'Type': service['service_type'],
+            'Unit Cost': service['unit_cost'],
+            'Frequency/Year': service['frequency'],
+            'Inflation Rate (%)': service['inflation_rate'],
+            'Year Range': service['year_range'],
+            'Total Years': service['total_years'],
+            'Annual Cost': service['unit_cost'] * service['frequency']
+        })
+    
+    df = pd.DataFrame(export_data)
+    
+    # Display as CSV
+    csv = df.to_csv(index=False)
+    st.download_button(
+        label="📥 Download as CSV",
+        data=csv,
+        file_name=f"service_list_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+        mime="text/csv"
+    )
+    
+    # Show preview
+    st.dataframe(df, use_container_width=True)
