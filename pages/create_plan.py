@@ -60,7 +60,7 @@ def show_create_plan_page():
         
         # Pre-fill projection settings if available
         default_base_year = st.session_state.lcp_data.settings.base_year if has_existing_data else datetime.now().year
-        default_projection_years = st.session_state.lcp_data.settings.projection_years if has_existing_data else 30.0
+        default_projection_years = st.session_state.lcp_data.settings.projection_years if has_existing_data else 39.4
         default_discount_rate = st.session_state.lcp_data.settings.discount_rate if has_existing_data else 0.035
         
         col1, col2 = st.columns(2)
@@ -80,8 +80,9 @@ def show_create_plan_page():
                 min_value=1.0,
                 max_value=100.0,
                 value=float(default_projection_years),
-                step=1.0,
-                help="Number of years to project costs into the future."
+                step=0.1,
+                format="%.1f",
+                help="Number of years to project costs into the future (can include decimals for precise periods)."
             )
         
         with col2:
@@ -183,7 +184,7 @@ def show_create_plan_page():
             st.metric("Present Value Calcs", "Enabled" if st.session_state.lcp_data.evaluee.discount_calculations else "Disabled")
         
         # Show projection period details
-        end_year = st.session_state.lcp_data.settings.base_year + int(st.session_state.lcp_data.settings.projection_years)
+        end_year = st.session_state.lcp_data.settings.base_year + st.session_state.lcp_data.settings.projection_years
         final_age = st.session_state.lcp_data.evaluee.current_age + st.session_state.lcp_data.settings.projection_years
         
         st.info(f"**Projection Period:** {st.session_state.lcp_data.settings.base_year} - {end_year} (Age {st.session_state.lcp_data.evaluee.current_age} - {final_age:.1f})")

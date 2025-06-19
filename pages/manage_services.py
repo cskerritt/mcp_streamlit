@@ -945,12 +945,93 @@ def show_unified_view_edit():
     st.subheader("🌐 Unified View - All Tables & Services")
     st.markdown("View and edit all your service tables and services from one comprehensive interface.")
     
+    # Multi-scenario support
+    has_multiple_scenarios = len(st.session_state.lcp_data.scenarios) > 1
+    
+    if has_multiple_scenarios:
+        st.markdown("#### 🎭 Scenario Selection")
+        
+        # View mode selection
+        view_mode = st.radio(
+            "View Mode:",
+            ["Current Scenario Only", "Selected Scenarios", "All Scenarios Combined"],
+            help="Choose which scenarios to view and edit"
+        )
+        
+        selected_scenarios = []
+        
+        if view_mode == "Current Scenario Only":
+            current_scenario = st.session_state.lcp_data.get_current_scenario()
+            st.info(f"**Viewing:** {current_scenario.name if current_scenario else 'Unknown'}")
+        elif view_mode == "Selected Scenarios":
+            st.markdown("#### 📋 Select Scenarios to View")
+            st.caption("💡 Choose which scenarios to include in the unified view. You can edit services from any selected scenario.")
+            
+            # Add Select All / Deselect All buttons
+            col1, col2, col3 = st.columns([1, 1, 4])
+            with col1:
+                if st.button("✅ Select All", key="select_all_scenarios"):
+                    for scenario_key in st.session_state.lcp_data.scenarios.keys():
+                        st.session_state[f"scenario_select_{scenario_key}"] = True
+                    st.rerun()
+            with col2:
+                if st.button("❌ Deselect All", key="deselect_all_scenarios"):
+                    for scenario_key in st.session_state.lcp_data.scenarios.keys():
+                        st.session_state[f"scenario_select_{scenario_key}"] = False
+                    st.rerun()
+            
+            # Create checkboxes for each scenario
+            scenario_options = {}
+            col_count = min(3, len(st.session_state.lcp_data.scenarios))  # Max 3 columns
+            cols = st.columns(col_count)
+            
+            for idx, (scenario_key, scenario) in enumerate(st.session_state.lcp_data.scenarios.items()):
+                col_idx = idx % col_count
+                with cols[col_idx]:
+                    baseline_text = " (Baseline)" if scenario.is_baseline else ""
+                    is_current = scenario_key == st.session_state.lcp_data.active_scenario
+                    current_text = " 🟢" if is_current else ""
+                    
+                    # Default to selecting current scenario
+                    default_value = is_current
+                    
+                    checkbox_key = f"scenario_select_{scenario_key}"
+                    selected = st.checkbox(
+                        f"{scenario.name}{baseline_text}{current_text}",
+                        value=default_value,
+                        key=checkbox_key,
+                        help=f"Include '{scenario.name}' in the unified view"
+                    )
+                    
+                    if selected:
+                        selected_scenarios.append(scenario_key)
+            
+            if selected_scenarios:
+                scenario_names = [st.session_state.lcp_data.scenarios[key].name for key in selected_scenarios]
+                st.info(f"**Selected:** {', '.join(scenario_names)} ({len(selected_scenarios)} scenarios)")
+            else:
+                st.warning("⚠️ No scenarios selected. Please select at least one scenario to view.")
+                return
+        else:  # All Scenarios Combined
+            selected_scenarios = list(st.session_state.lcp_data.scenarios.keys())
+            scenario_count = len(st.session_state.lcp_data.scenarios)
+            st.info(f"**Viewing:** All {scenario_count} scenarios combined")
+        
+        st.markdown("---")
+        
+        # If viewing multiple scenarios, use the multi-scenario view with selected scenarios
+        if view_mode in ["Selected Scenarios", "All Scenarios Combined"]:
+            show_multi_scenario_unified_view(selected_scenarios)
+            return
+    else:
+        view_mode = "Current Scenario Only"
+    
     # Check if we have any tables
     if not st.session_state.lcp_data.tables:
         st.info("No service tables created yet. Use the 'Add Table' tab to create your first table.")
         return
     
-    # Get all services across all tables for overview
+    # Get all services from current scenario (original functionality preserved)
     all_services = []
     for table_name, table in st.session_state.lcp_data.tables.items():
         for i, service in enumerate(table.services):
@@ -989,24 +1070,94 @@ def show_unified_view_edit():
     st.markdown("---")
     
     # Filters and search
-    col1, col2, col3 = st.columns(3)
+    if view_mode == "All Scenarios Combined":
+        col1, col2, col3, col4, col5 = st.columns(5)
+        with col4:
+            # Get unique scenarios for filter
+            unique_scenarios = list(set(s['scenario_name'] for s in all_services))
+            filter_scenario = st.selectbox("Filter by scenario:", ["All Scenarios"] + unique_scenarios)
+        with col5:
+            # Age range filtering
+            age_filter_mode = st.selectbox("Age filter:", ["All Ages", "By Age Range", "Active at Age"])
+    else:
+        col1, col2, col3, col4 = st.columns(4)
+        filter_scenario = None
+        with col4:
+            # Age range filtering
+            age_filter_mode = st.selectbox("Age filter:", ["All Ages", "By Age Range", "Active at Age"])
+    
     with col1:
         search_term = st.text_input("🔍 Search services:", placeholder="Enter service or table name")
     with col2:
-        filter_table = st.selectbox("Filter by table:", ["All Tables"] + list(st.session_state.lcp_data.tables.keys()))
+        # Get unique tables for filter based on view mode
+        if view_mode == "All Scenarios Combined":
+            unique_tables = list(set(s['table_name'] for s in all_services))
+        else:
+            unique_tables = list(st.session_state.lcp_data.tables.keys())
+        filter_table = st.selectbox("Filter by table:", ["All Tables"] + unique_tables)
     with col3:
         filter_type = st.selectbox("Filter by type:", ["All Types", "Recurring", "One-time", "Discrete", "Distributed"])
+    
+    # Age filtering inputs
+    age_filter_min = None
+    age_filter_max = None
+    age_filter_specific = None
+    
+    if age_filter_mode == "By Age Range":
+        col1, col2 = st.columns(2)
+        with col1:
+            age_filter_min = st.number_input("Min age:", min_value=0.0, max_value=120.0, value=st.session_state.lcp_data.evaluee.current_age, step=1.0)
+        with col2:
+            age_filter_max = st.number_input("Max age:", min_value=age_filter_min if age_filter_min else 0.0, max_value=120.0, value=st.session_state.lcp_data.evaluee.current_age + 10, step=1.0)
+        st.info(f"💡 Showing services active between ages {age_filter_min:.0f} and {age_filter_max:.0f}")
+    elif age_filter_mode == "Active at Age":
+        age_filter_specific = st.number_input("Show services active at age:", min_value=0.0, max_value=120.0, value=st.session_state.lcp_data.evaluee.current_age, step=1.0)
+        st.info(f"💡 Showing services active at age {age_filter_specific:.0f}")
     
     # Apply filters
     filtered_services = all_services
     if search_term:
         filtered_services = [s for s in filtered_services if 
                            search_term.lower() in s['service_name'].lower() or 
-                           search_term.lower() in s['table_name'].lower()]
+                           search_term.lower() in s['table_name'].lower() or
+                           (view_mode == "All Scenarios Combined" and search_term.lower() in s['scenario_name'].lower())]
     if filter_table != "All Tables":
         filtered_services = [s for s in filtered_services if s['table_name'] == filter_table]
     if filter_type != "All Types":
         filtered_services = [s for s in filtered_services if s['service_type'] == filter_type]
+    if filter_scenario and filter_scenario != "All Scenarios":
+        filtered_services = [s for s in filtered_services if s['scenario_name'] == filter_scenario]
+    
+    # Apply age filtering
+    if age_filter_mode != "All Ages":
+        age_filtered_services = []
+        base_year = st.session_state.lcp_data.settings.base_year
+        current_age = st.session_state.lcp_data.evaluee.current_age
+        
+        for service_data in filtered_services:
+            service_years = service_data['years']
+            if not service_years:
+                continue
+                
+            # Convert years to ages
+            service_ages = [calculate_age_for_year(base_year, current_age, year) for year in service_years]
+            
+            include_service = False
+            if age_filter_mode == "By Age Range":
+                # Check if service is active during any part of the age range
+                min_service_age = min(service_ages)
+                max_service_age = max(service_ages)
+                if (min_service_age <= age_filter_max and max_service_age >= age_filter_min):
+                    include_service = True
+            elif age_filter_mode == "Active at Age":
+                # Check if service is active at the specific age
+                if age_filter_specific >= min(service_ages) and age_filter_specific <= max(service_ages):
+                    include_service = True
+            
+            if include_service:
+                age_filtered_services.append(service_data)
+        
+        filtered_services = age_filtered_services
     
     st.markdown(f"### Found {len(filtered_services)} services")
     
@@ -1070,279 +1221,138 @@ def show_unified_view_edit():
     # Detailed service list with inline editing
     st.markdown("#### 📋 Service Details")
     
-    # Group services by table for better organization
-    services_by_table = {}
-    for service in filtered_services:
-        table_name = service['table_name']
-        if table_name not in services_by_table:
-            services_by_table[table_name] = []
-        services_by_table[table_name].append(service)
-    
-    for table_name, table_services in services_by_table.items():
-        with st.expander(f"📋 {table_name} ({len(table_services)} services)", expanded=True):
+    # Group services by scenario and table for better organization
+    if view_mode == "All Scenarios Combined":
+        services_by_scenario_table = {}
+        for service in filtered_services:
+            key = f"{service['scenario_name']} / {service['table_name']}"
+            if key not in services_by_scenario_table:
+                services_by_scenario_table[key] = []
+            services_by_scenario_table[key].append(service)
+        
+        for scenario_table_key, table_services in services_by_scenario_table.items():
+            with st.expander(f"🎭 {scenario_table_key} ({len(table_services)} services)", expanded=True):
+                _display_service_list(table_services, view_mode)
+    else:
+        services_by_table = {}
+        for service in filtered_services:
+            table_name = service['table_name']
+            if table_name not in services_by_table:
+                services_by_table[table_name] = []
+            services_by_table[table_name].append(service)
+        
+        for table_name, table_services in services_by_table.items():
+            with st.expander(f"📋 {table_name} ({len(table_services)} services)", expanded=True):
+                _display_service_list(table_services, view_mode)
+
+def _display_service_list(table_services, view_mode):
+    """Helper function to display a list of services with editing capabilities."""
+    for service_data in table_services:
+        service = service_data['service_obj']
+        service_index = service_data['service_index']
+        table_name = service_data['table_name']
+        
+        # Create columns for service display
+        col1, col2, col3, col4, col5 = st.columns([3, 2, 2, 2, 1])
+        
+        with col1:
+            st.markdown(f"**{service.name}**")
+            # Show age information for service years
+            if service_data['years']:
+                if len(service_data['years']) <= 3:
+                    ages = [calculate_age_for_year(st.session_state.lcp_data.settings.base_year, 
+                                                 st.session_state.lcp_data.evaluee.current_age, year) 
+                           for year in service_data['years']]
+                    age_str = ', '.join([f"Age {age:.1f}" for age in ages])
+                    st.caption(f"📅 {service_data['year_range']} ({age_str})")
+                else:
+                    start_age = calculate_age_for_year(st.session_state.lcp_data.settings.base_year, 
+                                                     st.session_state.lcp_data.evaluee.current_age, 
+                                                     min(service_data['years']))
+                    end_age = calculate_age_for_year(st.session_state.lcp_data.settings.base_year, 
+                                                   st.session_state.lcp_data.evaluee.current_age, 
+                                                   max(service_data['years']))
+                    st.caption(f"📅 {service_data['year_range']} (Age {start_age:.1f} to {end_age:.1f})")
+        
+        with col2:
+            st.write(f"**${service.unit_cost:,.2f}**")
+            st.caption(f"{service.frequency_per_year:.1f}/year")
+        
+        with col3:
+            st.write(f"**{service.inflation_rate*100:.1f}%**")
+            st.caption(f"{service_data['service_type']}")
+        
+        with col4:
+            annual_cost = service.unit_cost * service.frequency_per_year
+            st.write(f"**${annual_cost:,.0f}**/year")
+            st.caption(f"{service_data['total_years']} years")
+        
+        with col5:
+            # Create unique key based on view mode to avoid duplicates
+            view_prefix = "multi" if view_mode == "All Scenarios Combined" else "single"
+            scenario_id = service_data.get('scenario_key', 'current') if view_mode == "All Scenarios Combined" else 'current'
+            edit_key = f"edit_unified_{view_prefix}_{scenario_id}_{table_name}_{service_index}"
+            edit_state_key = f"editing_unified_{view_prefix}_{scenario_id}_{table_name}_{service_index}"
             
-            for service_data in table_services:
-                service = service_data['service_obj']
-                service_index = service_data['service_index']
+            if st.button("✏️", key=edit_key, help="Quick edit"):
+                st.session_state[edit_state_key] = True
+                st.rerun()
+        
+        # Simplified quick edit form with basic cost/frequency editing only
+        if st.session_state.get(edit_state_key, False):
+            with st.form(f"quick_edit_{view_prefix}_{scenario_id}_{table_name}_{service_index}"):
+                st.markdown(f"**Quick Edit: {service.name}**")
                 
-                # Create columns for service display
-                col1, col2, col3, col4, col5 = st.columns([3, 2, 2, 2, 1])
-                
+                col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.markdown(f"**{service.name}**")
-                    # Show age information for service years
-                    if service_data['years']:
-                        if len(service_data['years']) <= 3:
-                            ages = [calculate_age_for_year(st.session_state.lcp_data.settings.base_year, 
-                                                         st.session_state.lcp_data.evaluee.current_age, year) 
-                                   for year in service_data['years']]
-                            age_str = ', '.join([f"Age {age:.1f}" for age in ages])
-                            st.caption(f"📅 {service_data['year_range']} ({age_str})")
-                        else:
-                            start_age = calculate_age_for_year(st.session_state.lcp_data.settings.base_year, 
-                                                             st.session_state.lcp_data.evaluee.current_age, 
-                                                             min(service_data['years']))
-                            end_age = calculate_age_for_year(st.session_state.lcp_data.settings.base_year, 
-                                                           st.session_state.lcp_data.evaluee.current_age, 
-                                                           max(service_data['years']))
-                            st.caption(f"📅 {service_data['year_range']} (Age {start_age:.1f} to {end_age:.1f})")
-                
+                    new_cost = st.number_input("Unit Cost ($):", value=float(service.unit_cost), min_value=0.0)
                 with col2:
-                    st.write(f"**${service.unit_cost:,.2f}**")
-                    st.caption(f"{service.frequency_per_year:.1f}/year")
-                
+                    new_freq = st.number_input("Frequency/Year:", value=float(service.frequency_per_year), min_value=0.1)
                 with col3:
-                    st.write(f"**{service.inflation_rate*100:.1f}%**")
-                    st.caption(f"{service_data['service_type']}")
+                    new_inflation = st.number_input("Inflation (%):", value=float(service.inflation_rate * 100), min_value=0.0, max_value=20.0)
                 
-                with col4:
-                    annual_cost = service.unit_cost * service.frequency_per_year
-                    st.write(f"**${annual_cost:,.0f}**/year")
-                    st.caption(f"{service_data['total_years']} years")
-                
-                with col5:
-                    edit_key = f"edit_unified_{table_name}_{service_index}"
-                    if st.button("✏️", key=edit_key, help="Quick edit"):
-                        st.session_state[f"editing_unified_{table_name}_{service_index}"] = True
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.form_submit_button("💾 Save", use_container_width=True):
+                        # For multi-scenario view, we may need to switch scenarios
+                        if view_mode == "All Scenarios Combined" and scenario_id != 'current':
+                            # Switch to the correct scenario for editing
+                            original_scenario = st.session_state.lcp_data.active_scenario
+                            st.session_state.lcp_data.set_active_scenario(scenario_id)
+                            
+                            # Update the service in the correct scenario
+                            target_table = st.session_state.lcp_data.tables[table_name]
+                            target_service = target_table.services[service_index]
+                            target_service.unit_cost = new_cost
+                            target_service.frequency_per_year = new_freq
+                            target_service.inflation_rate = new_inflation / 100
+                            
+                            # Switch back to original scenario
+                            st.session_state.lcp_data.set_active_scenario(original_scenario)
+                        else:
+                            # Update cost and frequency information in current scenario
+                            service.unit_cost = new_cost
+                            service.frequency_per_year = new_freq
+                            service.inflation_rate = new_inflation / 100
+                        
+                        # Auto-save if enabled
+                        if st.session_state.get('auto_save', True):
+                            try:
+                                db.save_life_care_plan(st.session_state.lcp_data)
+                                st.session_state.last_saved = datetime.now().strftime("%H:%M:%S")
+                            except Exception as e:
+                                st.warning(f"Auto-save failed: {str(e)}")
+                        
+                        st.success("✅ Service updated!")
+                        del st.session_state[edit_state_key]
                         st.rerun()
                 
-                # Quick edit form
-                if st.session_state.get(f"editing_unified_{table_name}_{service_index}", False):
-                    with st.form(f"quick_edit_{table_name}_{service_index}"):
-                        st.markdown(f"**Enhanced Edit: {service.name}**")
-                        
-                        # Cost and frequency section
-                        st.subheader("💰 Cost Information")
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            new_cost = st.number_input("Unit Cost ($):", value=float(service.unit_cost), min_value=0.0)
-                        with col2:
-                            new_freq = st.number_input("Frequency/Year:", value=float(service.frequency_per_year), min_value=0.1)
-                        with col3:
-                            new_inflation = st.number_input("Inflation (%):", value=float(service.inflation_rate * 100), min_value=0.0, max_value=20.0)
-                        
-                        # Timing section
-                        st.subheader("📅 Service Timing")
-                        
-                        # Determine current service type and show appropriate editing interface
-                        if service.is_one_time_cost:
-                            st.markdown("**Service Type:** One-time Cost")
-                            new_one_time_year = st.number_input(
-                                "Year of Occurrence:", 
-                                value=int(service.one_time_cost_year) if service.one_time_cost_year else st.session_state.lcp_data.settings.base_year, 
-                                step=1
-                            )
-                            # Display age for one-time cost year
-                            display_age_info(
-                                new_one_time_year,
-                                st.session_state.lcp_data.evaluee.current_age,
-                                st.session_state.lcp_data.settings.base_year
-                            )
-                            
-                        elif service.occurrence_years:
-                            st.markdown("**Service Type:** Discrete Occurrences")
-                            
-                            # Edit mode selection
-                            edit_mode = st.radio(
-                                "Edit Mode:",
-                                ["Text Input", "Year Selector"],
-                                horizontal=True,
-                                key=f"edit_mode_unified_{table_name}_{service_index}"
-                            )
-                            
-                            if edit_mode == "Text Input":
-                                occurrence_years_str = st.text_input(
-                                    "Occurrence Years (comma-separated):",
-                                    value=", ".join(map(str, service.occurrence_years))
-                                )
-                                # Display ages for entered years
-                                if occurrence_years_str:
-                                    try:
-                                        new_occurrence_years = [int(year.strip()) for year in occurrence_years_str.split(',')]
-                                        display_age_info(
-                                            new_occurrence_years,
-                                            st.session_state.lcp_data.evaluee.current_age,
-                                            st.session_state.lcp_data.settings.base_year
-                                        )
-                                    except ValueError:
-                                        st.warning("Please enter valid years separated by commas")
-                                        new_occurrence_years = service.occurrence_years
-                            else:
-                                # Multi-select for years
-                                base_year = st.session_state.lcp_data.settings.base_year
-                                end_year = base_year + int(st.session_state.lcp_data.settings.projection_years)
-                                if st.session_state.lcp_data.settings.projection_years % 1 != 0:
-                                    end_year += 1
-                                available_years = list(range(base_year, end_year))
-                                
-                                new_occurrence_years = st.multiselect(
-                                    "Select Years:",
-                                    options=available_years,
-                                    default=service.occurrence_years,
-                                    key=f"occurrence_years_unified_{table_name}_{service_index}"
-                                )
-                                # Display ages for selected years
-                                if new_occurrence_years:
-                                    display_age_info(
-                                        new_occurrence_years,
-                                        st.session_state.lcp_data.evaluee.current_age,
-                                        st.session_state.lcp_data.settings.base_year
-                                    )
-                                    
-                        elif hasattr(service, 'is_distributed_instances') and service.is_distributed_instances:
-                            st.markdown("**Service Type:** Distributed Instances")
-                            col1, col2, col3 = st.columns(3)
-                            with col1:
-                                new_start_year = st.number_input(
-                                    "Start Year:", 
-                                    value=int(service.start_year) if service.start_year else st.session_state.lcp_data.settings.base_year, 
-                                    step=1
-                                )
-                            with col2:
-                                new_total_instances = st.number_input(
-                                    "Total Instances:",
-                                    value=int(service.total_instances) if hasattr(service, 'total_instances') and service.total_instances else 10,
-                                    min_value=1,
-                                    step=1
-                                )
-                            with col3:
-                                new_distribution_period = st.number_input(
-                                    "Distribution Period (years):",
-                                    value=float(service.distribution_period_years) if hasattr(service, 'distribution_period_years') and service.distribution_period_years else 5.0,
-                                    min_value=0.1,
-                                    step=0.1
-                                )
-                            
-                            # Calculate and show frequency per year
-                            calculated_freq = new_total_instances / new_distribution_period
-                            st.info(f"💡 Calculated frequency: {calculated_freq:.2f} per year")
-                            
-                            # Display age range
-                            end_year_calc = new_start_year + new_distribution_period
-                            display_age_info(
-                                [new_start_year, int(end_year_calc)],
-                                st.session_state.lcp_data.evaluee.current_age,
-                                st.session_state.lcp_data.settings.base_year
-                            )
-                            
-                        else:
-                            st.markdown("**Service Type:** Recurring")
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                new_start_year = st.number_input(
-                                    "Start Year:", 
-                                    value=int(service.start_year) if service.start_year else st.session_state.lcp_data.settings.base_year, 
-                                    step=1
-                                )
-                                # Display age for start year
-                                start_age = calculate_age_for_year(
-                                    st.session_state.lcp_data.settings.base_year,
-                                    st.session_state.lcp_data.evaluee.current_age,
-                                    new_start_year
-                                )
-                                st.caption(f"📅 Start age: **{start_age:.1f} years old**")
-                            with col2:
-                                new_end_year = st.number_input(
-                                    "End Year:", 
-                                    value=int(service.end_year) if service.end_year else st.session_state.lcp_data.settings.base_year + int(st.session_state.lcp_data.settings.projection_years) - 1, 
-                                    step=1
-                                )
-                                # Display age for end year
-                                end_age = calculate_age_for_year(
-                                    st.session_state.lcp_data.settings.base_year,
-                                    st.session_state.lcp_data.evaluee.current_age,
-                                    new_end_year
-                                )
-                                st.caption(f"📅 End age: **{end_age:.1f} years old**")
-                            
-                            # Show duration
-                            duration = new_end_year - new_start_year + 1
-                            st.info(f"💡 Service duration: {duration} years")
-                        
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            if st.form_submit_button("💾 Save", use_container_width=True):
-                                # Update cost and frequency information
-                                service.unit_cost = new_cost
-                                service.frequency_per_year = new_freq
-                                service.inflation_rate = new_inflation / 100
-                                
-                                # Update timing information based on service type
-                                if service.is_one_time_cost:
-                                    service.one_time_cost_year = new_one_time_year
-                                    
-                                elif service.occurrence_years:
-                                    if edit_mode == "Text Input":
-                                        if occurrence_years_str:
-                                            try:
-                                                service.occurrence_years = [int(year.strip()) for year in occurrence_years_str.split(',')]
-                                            except ValueError:
-                                                st.error("Invalid years format. Changes not saved.")
-                                                return  # Exit without saving
-                                    else:
-                                        service.occurrence_years = new_occurrence_years
-                                        
-                                elif hasattr(service, 'is_distributed_instances') and service.is_distributed_instances:
-                                    service.start_year = new_start_year
-                                    service.total_instances = new_total_instances
-                                    service.distribution_period_years = new_distribution_period
-                                    # Update the calculated frequency
-                                    service.frequency_per_year = new_total_instances / new_distribution_period
-                                    # Update end year for consistency
-                                    service.end_year = int(new_start_year + new_distribution_period)
-                                    
-                                else:  # Recurring service
-                                    service.start_year = new_start_year
-                                    service.end_year = new_end_year
-                                
-                                # Recalculate and update any dependent calculations
-                                # This triggers auto-recalculation of the life care plan
-                                try:
-                                    from src.calculator import CostCalculator
-                                    calculator = CostCalculator(st.session_state.lcp_data)
-                                    # This will trigger recalculation when called
-                                    summary = calculator.calculate_summary_statistics()
-                                except Exception as e:
-                                    st.warning(f"Recalculation warning: {str(e)}")
-                                
-                                # Auto-save if enabled
-                                if st.session_state.get('auto_save', True):
-                                    try:
-                                        db.save_life_care_plan(st.session_state.lcp_data)
-                                        st.session_state.last_saved = datetime.now().strftime("%H:%M:%S")
-                                    except Exception as e:
-                                        st.warning(f"Auto-save failed: {str(e)}")
-                                
-                                st.success("✅ Service updated with automatic recalculation!")
-                                del st.session_state[f"editing_unified_{table_name}_{service_index}"]
-                                st.rerun()
-                        
-                        with col2:
-                            if st.form_submit_button("❌ Cancel", use_container_width=True):
-                                del st.session_state[f"editing_unified_{table_name}_{service_index}"]
-                                st.rerun()
-                
-                st.markdown("---")
+                with col2:
+                    if st.form_submit_button("❌ Cancel", use_container_width=True):
+                        del st.session_state[edit_state_key]
+                        st.rerun()
+        
+        st.markdown("---")
 
 def show_all_overlaps():
     """Detect and display all service overlaps across all tables."""
@@ -1411,3 +1421,277 @@ def show_export_service_list(services):
     
     # Show preview
     st.dataframe(df, use_container_width=True)
+
+def show_multi_scenario_unified_view(selected_scenario_keys=None):
+    """Show unified view across selected scenarios with editing capabilities.
+    
+    Args:
+        selected_scenario_keys: List of scenario keys to include. If None, includes all scenarios.
+    """
+    # Default to all scenarios if none specified
+    if selected_scenario_keys is None:
+        selected_scenario_keys = list(st.session_state.lcp_data.scenarios.keys())
+    
+    st.markdown("### 🎭 Multi-Scenario Unified View")
+    
+    # Show which scenarios are being viewed
+    if len(selected_scenario_keys) == len(st.session_state.lcp_data.scenarios):
+        st.markdown("View and edit services across **all scenarios**. **Note:** Editing services will modify them in their respective scenarios.")
+    else:
+        scenario_names = [st.session_state.lcp_data.scenarios[key].name for key in selected_scenario_keys]
+        st.markdown(f"View and edit services from **{len(selected_scenario_keys)} selected scenarios**: {', '.join(scenario_names)}. **Note:** Editing services will modify them in their respective scenarios.")
+    
+    # Check if selected scenarios have tables
+    has_tables = any(st.session_state.lcp_data.scenarios[key].tables for key in selected_scenario_keys if key in st.session_state.lcp_data.scenarios)
+    if not has_tables:
+        st.info("No service tables found in the selected scenarios. Create tables and services first.")
+        return
+    
+    # Collect services from selected scenarios only
+    all_services = []
+    for scenario_key in selected_scenario_keys:
+        if scenario_key not in st.session_state.lcp_data.scenarios:
+            continue  # Skip if scenario doesn't exist
+            
+        scenario = st.session_state.lcp_data.scenarios[scenario_key]
+        for table_name, table in scenario.tables.items():
+            for i, service in enumerate(table.services):
+                service_years = get_service_years(service)
+                baseline_text = " (Baseline)" if scenario.is_baseline else ""
+                all_services.append({
+                    'scenario_name': f"{scenario.name}{baseline_text}",
+                    'scenario_key': scenario_key,
+                    'table_name': table_name,
+                    'service_name': service.name,
+                    'service_index': i,
+                    'service_obj': service,
+                    'unit_cost': service.unit_cost,
+                    'frequency': service.frequency_per_year,
+                    'inflation_rate': service.inflation_rate * 100,
+                    'years': service_years,
+                    'year_range': f"{min(service_years)}-{max(service_years)}" if service_years else "None",
+                    'total_years': len(service_years),
+                    'service_type': "One-time" if service.is_one_time_cost else ("Distributed" if hasattr(service, 'is_distributed_instances') and service.is_distributed_instances else ("Discrete" if service.occurrence_years else "Recurring"))
+                })
+    
+    if not all_services:
+        st.info("No services found in the selected scenarios.")
+        return
+    
+    # Summary statistics
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Selected Scenarios", len(selected_scenario_keys))
+    with col2:
+        table_count = len(set(s['table_name'] for s in all_services))
+        st.metric("Unique Tables", table_count)
+    with col3:
+        st.metric("Total Services", len(all_services))
+    with col4:
+        total_cost = sum(s['unit_cost'] * s['frequency'] for s in all_services)
+        st.metric("Total Annual Cost", f"${total_cost:,.0f}")
+    
+    st.markdown("---")
+    
+    # Filters and search
+    col1, col2, col3, col4, col5 = st.columns(5)
+    
+    with col1:
+        search_term = st.text_input("🔍 Search:", placeholder="Service, table, or scenario")
+    with col2:
+        unique_scenarios = list(set(s['scenario_name'] for s in all_services))
+        filter_scenario = st.selectbox("Filter by scenario:", ["All Scenarios"] + unique_scenarios)
+    with col3:
+        unique_tables = list(set(s['table_name'] for s in all_services))
+        filter_table = st.selectbox("Filter by table:", ["All Tables"] + unique_tables)
+    with col4:
+        filter_type = st.selectbox("Filter by type:", ["All Types", "Recurring", "One-time", "Discrete", "Distributed"])
+    with col5:
+        # Age range filtering
+        age_filter_mode = st.selectbox("Age filter:", ["All Ages", "By Age Range", "Active at Age"])
+    
+    # Age filtering inputs for multi-scenario view
+    age_filter_min = None
+    age_filter_max = None
+    age_filter_specific = None
+    
+    if age_filter_mode == "By Age Range":
+        col1, col2 = st.columns(2)
+        with col1:
+            age_filter_min = st.number_input("Min age:", min_value=0.0, max_value=120.0, value=st.session_state.lcp_data.evaluee.current_age, step=1.0, key="multi_age_min")
+        with col2:
+            age_filter_max = st.number_input("Max age:", min_value=age_filter_min if age_filter_min else 0.0, max_value=120.0, value=st.session_state.lcp_data.evaluee.current_age + 10, step=1.0, key="multi_age_max")
+        st.info(f"💡 Showing services active between ages {age_filter_min:.0f} and {age_filter_max:.0f} across all scenarios")
+    elif age_filter_mode == "Active at Age":
+        age_filter_specific = st.number_input("Show services active at age:", min_value=0.0, max_value=120.0, value=st.session_state.lcp_data.evaluee.current_age, step=1.0, key="multi_age_specific")
+        st.info(f"💡 Showing services active at age {age_filter_specific:.0f} across all scenarios")
+    
+    # Apply filters
+    filtered_services = all_services
+    if search_term:
+        filtered_services = [s for s in filtered_services if 
+                           search_term.lower() in s['service_name'].lower() or 
+                           search_term.lower() in s['table_name'].lower() or
+                           search_term.lower() in s['scenario_name'].lower()]
+    if filter_scenario != "All Scenarios":
+        filtered_services = [s for s in filtered_services if s['scenario_name'] == filter_scenario]
+    if filter_table != "All Tables":
+        filtered_services = [s for s in filtered_services if s['table_name'] == filter_table]
+    if filter_type != "All Types":
+        filtered_services = [s for s in filtered_services if s['service_type'] == filter_type]
+    
+    # Apply age filtering for multi-scenario view
+    if age_filter_mode != "All Ages":
+        age_filtered_services = []
+        base_year = st.session_state.lcp_data.settings.base_year
+        current_age = st.session_state.lcp_data.evaluee.current_age
+        
+        for service_data in filtered_services:
+            service_years = service_data['years']
+            if not service_years:
+                continue
+                
+            # Convert years to ages
+            service_ages = [calculate_age_for_year(base_year, current_age, year) for year in service_years]
+            
+            include_service = False
+            if age_filter_mode == "By Age Range":
+                # Check if service is active during any part of the age range
+                min_service_age = min(service_ages)
+                max_service_age = max(service_ages)
+                if (min_service_age <= age_filter_max and max_service_age >= age_filter_min):
+                    include_service = True
+            elif age_filter_mode == "Active at Age":
+                # Check if service is active at the specific age
+                if age_filter_specific >= min(service_ages) and age_filter_specific <= max(service_ages):
+                    include_service = True
+            
+            if include_service:
+                age_filtered_services.append(service_data)
+        
+        filtered_services = age_filtered_services
+    
+    scenario_text = "selected scenarios" if len(selected_scenario_keys) < len(st.session_state.lcp_data.scenarios) else "all scenarios"
+    st.markdown(f"### Found {len(filtered_services)} services across {scenario_text}")
+    
+    if not filtered_services:
+        st.info("No services match your filters.")
+        return
+    
+    # Group by scenario and table
+    services_by_scenario_table = {}
+    for service in filtered_services:
+        key = f"{service['scenario_name']} / {service['table_name']}"
+        if key not in services_by_scenario_table:
+            services_by_scenario_table[key] = []
+        services_by_scenario_table[key].append(service)
+    
+    # Display services grouped by scenario/table
+    for scenario_table_key, table_services in services_by_scenario_table.items():
+        with st.expander(f"🎭 {scenario_table_key} ({len(table_services)} services)", expanded=True):
+            
+            for service_data in table_services:
+                service = service_data['service_obj']
+                service_index = service_data['service_index']
+                table_name = service_data['table_name']
+                scenario_key = service_data['scenario_key']
+                
+                # Create unique key for multi-scenario editing
+                edit_key = f"multi_scenario_{scenario_key}_{table_name}_{service_index}"
+                
+                # Create columns for service display
+                col1, col2, col3, col4, col5, col6 = st.columns([3, 1.5, 1.5, 1.5, 1, 1])
+                
+                with col1:
+                    st.markdown(f"**{service.name}**")
+                    # Show age information for service years
+                    if service_data['years']:
+                        if len(service_data['years']) <= 3:
+                            ages = [calculate_age_for_year(st.session_state.lcp_data.settings.base_year, 
+                                                         st.session_state.lcp_data.evaluee.current_age, year) 
+                                   for year in service_data['years']]
+                            age_str = ', '.join([f"Age {age:.1f}" for age in ages])
+                            st.caption(f"📅 {service_data['year_range']} ({age_str})")
+                        else:
+                            start_age = calculate_age_for_year(st.session_state.lcp_data.settings.base_year, 
+                                                             st.session_state.lcp_data.evaluee.current_age, 
+                                                             min(service_data['years']))
+                            end_age = calculate_age_for_year(st.session_state.lcp_data.settings.base_year, 
+                                                           st.session_state.lcp_data.evaluee.current_age, 
+                                                           max(service_data['years']))
+                            st.caption(f"📅 {service_data['year_range']} (Age {start_age:.1f} to {end_age:.1f})")
+                
+                with col2:
+                    st.write(f"**${service.unit_cost:,.2f}**")
+                    st.caption(f"{service.frequency_per_year:.1f}/year")
+                
+                with col3:
+                    st.write(f"**{service.inflation_rate*100:.1f}%**")
+                    st.caption(f"{service_data['service_type']}")
+                
+                with col4:
+                    annual_cost = service.unit_cost * service.frequency_per_year
+                    st.write(f"**${annual_cost:,.0f}**/year")
+                    st.caption(f"{service_data['total_years']} years")
+                
+                with col5:
+                    scenario_parts = service_data['scenario_name'].split(' (')[0]  # Remove "(Baseline)" for display
+                    st.caption(f"**Scenario:**")
+                    st.caption(f"{scenario_parts}")
+                
+                with col6:
+                    if st.button("✏️", key=f"edit_{edit_key}", help="Edit service"):
+                        st.session_state[f"editing_{edit_key}"] = True
+                        st.rerun()
+                
+                # Quick edit form for cross-scenario editing
+                if st.session_state.get(f"editing_{edit_key}", False):
+                    with st.form(f"edit_form_{edit_key}"):
+                        st.markdown(f"**Editing: {service.name}** (in {service_data['scenario_name']})")
+                        st.warning("⚠️ **Multi-Scenario Edit**: Changes will be applied to this service in its original scenario.")
+                        
+                        # Cost and frequency section
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            new_cost = st.number_input("Unit Cost ($):", value=float(service.unit_cost), min_value=0.0, key=f"cost_{edit_key}")
+                        with col2:
+                            new_freq = st.number_input("Frequency/Year:", value=float(service.frequency_per_year), min_value=0.1, key=f"freq_{edit_key}")
+                        with col3:
+                            new_inflation = st.number_input("Inflation (%):", value=float(service.inflation_rate * 100), min_value=0.0, max_value=20.0, key=f"infl_{edit_key}")
+                        
+                        # Save/Cancel buttons
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.form_submit_button("💾 Save Changes", use_container_width=True):
+                                # Switch to the correct scenario for editing
+                                original_scenario = st.session_state.lcp_data.active_scenario
+                                st.session_state.lcp_data.set_active_scenario(scenario_key)
+                                
+                                # Update the service
+                                target_table = st.session_state.lcp_data.tables[table_name]
+                                target_service = target_table.services[service_index]
+                                target_service.unit_cost = new_cost
+                                target_service.frequency_per_year = new_freq
+                                target_service.inflation_rate = new_inflation / 100
+                                
+                                # Switch back to original scenario
+                                st.session_state.lcp_data.set_active_scenario(original_scenario)
+                                
+                                # Auto-save if enabled
+                                if st.session_state.get('auto_save', True):
+                                    try:
+                                        db.save_life_care_plan(st.session_state.lcp_data)
+                                        st.session_state.last_saved = datetime.now().strftime("%H:%M:%S")
+                                    except Exception as e:
+                                        st.warning(f"Auto-save failed: {str(e)}")
+                                
+                                st.success(f"✅ Updated {service.name} in {service_data['scenario_name']}!")
+                                del st.session_state[f"editing_{edit_key}"]
+                                st.rerun()
+                        
+                        with col2:
+                            if st.form_submit_button("❌ Cancel", use_container_width=True):
+                                del st.session_state[f"editing_{edit_key}"]
+                                st.rerun()
+                
+                st.markdown("---")

@@ -318,7 +318,7 @@ def load_sample_data():
     try:
         # Create sample evaluee
         evaluee = Evaluee(name="Jane Doe (Sample)", current_age=35, discount_calculations=True)
-        settings = ProjectionSettings(base_year=2025, projection_years=30, discount_rate=0.035)
+        settings = ProjectionSettings(base_year=2025, projection_years=39.4, discount_rate=0.035)
         lcp = LifeCarePlan(evaluee=evaluee, settings=settings)
         
         # Add sample physician evaluation table
