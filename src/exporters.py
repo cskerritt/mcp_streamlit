@@ -20,15 +20,28 @@ class ExcelExporter:
         self.calculator = calculator
         self.lcp = calculator.lcp
     
-    def export(self, file_path: str, include_all_scenarios: bool = False) -> None:
+    def export(self, file_path: str, include_all_scenarios: bool = False, selected_scenarios: list = None) -> None:
         """Export the life care plan to Excel file with improved formatting.
         
         Args:
             file_path: Output file path
-            include_all_scenarios: If True, export all scenarios with comparison sheets
+            include_all_scenarios: If True, export selected scenarios with comparison sheets
+            selected_scenarios: List of scenario names to include (if None, uses all scenarios)
         """
         if include_all_scenarios and len(self.lcp.scenarios) > 1:
-            self._export_multi_scenario(file_path)
+            # Use selected scenarios or all scenarios if none specified
+            scenarios_to_export = selected_scenarios if selected_scenarios else list(self.lcp.scenarios.keys())
+            if len(scenarios_to_export) > 1:
+                self._export_multi_scenario(file_path, scenarios_to_export)
+            else:
+                # Only one scenario selected, export as single scenario
+                if scenarios_to_export:
+                    original_active = self.lcp.active_scenario
+                    self.lcp.set_active_scenario(scenarios_to_export[0])
+                    self._export_single_scenario(file_path)
+                    self.lcp.set_active_scenario(original_active)
+                else:
+                    self._export_single_scenario(file_path)
         else:
             self._export_single_scenario(file_path)
     
@@ -57,8 +70,8 @@ class ExcelExporter:
                 ['Average Annual Cost', f"${summary_stats['average_annual_cost']:,.2f}"],
             ]
             
-            # Only include discount rate info if calculations are enabled
-            if self.lcp.evaluee.discount_calculations:
+            # Only include discount rate info if calculations are enabled AND discount rate > 0
+            if self.lcp.evaluee.discount_calculations and self.lcp.settings.discount_rate > 0:
                 summary_data.extend([
                     ['Total Lifetime Cost (Present Value)', f"${summary_stats['total_present_value']:,.2f}"],
                     ['Present Value Savings vs Nominal', f"${summary_stats['total_nominal_cost'] - summary_stats['total_present_value']:,.2f}"],
@@ -77,7 +90,8 @@ class ExcelExporter:
             
             # Enhanced Category breakdown with clearer headers
             category_rows = []
-            if self.lcp.evaluee.discount_calculations:
+            show_pv_in_excel = self.lcp.evaluee.discount_calculations and self.lcp.settings.discount_rate > 0
+            if show_pv_in_excel:
                 category_columns = [
                     'Service Category',
                     'Total Lifetime Cost (Nominal)',
@@ -121,7 +135,7 @@ class ExcelExporter:
                 'Total Lifetime Cost (Nominal)'
             ]
 
-            if self.lcp.evaluee.discount_calculations:
+            if show_pv_in_excel:
                 service_columns.append('Total Lifetime Cost (Present Value)')
             
             for table_name, data in category_costs.items():
@@ -151,7 +165,7 @@ class ExcelExporter:
                         f"${service['nominal_total']:,.2f}"
                     ]
                     
-                    if self.lcp.evaluee.discount_calculations:
+                    if show_pv_in_excel:
                         service_row.append(f"${service['present_value_total']:,.2f}")
                     
                     service_rows.append(service_row)
@@ -208,6 +222,23 @@ class ExcelExporter:
     def _add_sensitivity_analysis_sheet(self, writer):
         """Add sensitivity analysis calculations to Excel."""
         base_summary = self.calculator.calculate_summary_statistics()
+        
+        # Only include discount rate sensitivity if discount calculations are enabled
+        if not self.lcp.evaluee.discount_calculations:
+            # Create a simplified analysis sheet
+            analysis_data = []
+            analysis_data.append(['Sensitivity Analysis', ''])
+            analysis_data.append(['Present value calculations are disabled', ''])
+            analysis_data.append(['Only nominal cost analysis is available', ''])
+            analysis_data.append(['', ''])
+            analysis_data.append(['Inflation Impact Guidelines:', ''])
+            analysis_data.append(['1% increase across all services', 'Increases nominal costs 15-25%'])
+            analysis_data.append(['Higher inflation rates', 'Compound exponentially over time'])
+            analysis_data.append(['Consider regional cost variations', 'May require 20-40% adjustments'])
+            
+            analysis_df = pd.DataFrame(analysis_data, columns=['Analysis Type', 'Impact'])
+            analysis_df.to_excel(writer, sheet_name='Sensitivity Analysis', index=False)
+            return
         
         # Discount rate sensitivity
         discount_sensitivity = []
@@ -297,7 +328,8 @@ class ExcelExporter:
         # Summary verification
         audit_data.append(['Executive Summary Verification:', '', '', '', ''])
         audit_data.append(['Total Nominal Cost', f"${summary_stats['total_nominal_cost']:,.2f}", '', '', ''])
-        audit_data.append(['Total Present Value', f"${summary_stats['total_present_value']:,.2f}", '', '', ''])
+        if self.lcp.evaluee.discount_calculations:
+            audit_data.append(['Total Present Value', f"${summary_stats['total_present_value']:,.2f}", '', '', ''])
         audit_data.append(['Average Annual Cost', f"${summary_stats['average_annual_cost']:,.2f}", '', '', ''])
         audit_data.append(['Calculation Check', f"${summary_stats['total_nominal_cost'] / self.lcp.settings.projection_years:,.2f}", 'Should match average', '', ''])
         
@@ -367,35 +399,39 @@ class ExcelExporter:
         master_df = pd.DataFrame(master_data, columns=['Category', 'Service', 'Cost', 'Frequency', 'Inflation', 'Start', 'End', 'Type', 'Special'])
         master_df.to_excel(writer, sheet_name='Service Master', index=False)
 
-    def _export_multi_scenario(self, file_path: str) -> None:
-        """Export all scenarios with comparison sheets."""
+    def _export_multi_scenario(self, file_path: str, selected_scenarios: list = None) -> None:
+        """Export selected scenarios with comparison sheets."""
+        scenarios_to_export = selected_scenarios if selected_scenarios else list(self.lcp.scenarios.keys())
+        
         with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
-            # Scenario Comparison Overview
-            self._add_scenario_comparison_sheet(writer)
+            # Scenario Comparison Overview (only for selected scenarios)
+            self._add_scenario_comparison_sheet(writer, scenarios_to_export)
             
-            # Export each scenario to its own sheet
-            for scenario_name, scenario in self.lcp.scenarios.items():
-                # Temporarily switch to this scenario for calculations
-                original_active = self.lcp.active_scenario
-                self.lcp.set_active_scenario(scenario_name)
-                
-                # Create calculator for this scenario
-                scenario_calc = CostCalculator(self.lcp)
-                
-                # Export scenario data
-                self._export_scenario_to_sheet(writer, scenario_name, scenario_calc)
-                
-                # Restore original active scenario
-                self.lcp.set_active_scenario(original_active)
+            # Export each selected scenario to its own sheet
+            for scenario_name in scenarios_to_export:
+                if scenario_name in self.lcp.scenarios:
+                    # Temporarily switch to this scenario for calculations
+                    original_active = self.lcp.active_scenario
+                    self.lcp.set_active_scenario(scenario_name)
+                    
+                    # Create calculator for this scenario
+                    scenario_calc = CostCalculator(self.lcp)
+                    
+                    # Export scenario data with full detail
+                    self._export_scenario_to_sheet(writer, scenario_name, scenario_calc)
+                    
+                    # Restore original active scenario
+                    self.lcp.set_active_scenario(original_active)
             
-            # Add variance analysis
-            self._add_variance_analysis_sheet(writer)
+            # Add variance analysis (only for selected scenarios)
+            self._add_variance_analysis_sheet(writer, scenarios_to_export)
             
-            # Add scenario comparison tables
-            self._add_scenario_comparison_tables(writer)
+            # Add scenario comparison tables (only for selected scenarios)
+            self._add_scenario_comparison_tables(writer, scenarios_to_export)
 
-    def _add_scenario_comparison_sheet(self, writer):
+    def _add_scenario_comparison_sheet(self, writer, selected_scenarios: list = None):
         """Add executive scenario comparison overview."""
+        scenarios_to_compare = selected_scenarios if selected_scenarios else list(self.lcp.scenarios.keys())
         comparison_data = []
         comparison_data.append(['SCENARIO COMPARISON OVERVIEW', '', '', '', '', ''])
         comparison_data.append(['', '', '', '', '', ''])
@@ -403,27 +439,37 @@ class ExcelExporter:
         
         original_active = self.lcp.active_scenario
         
-        for scenario_name, scenario in self.lcp.scenarios.items():
-            self.lcp.set_active_scenario(scenario_name)
-            calc = CostCalculator(self.lcp)
-            summary = calc.calculate_summary_statistics()
-            
-            # Count total services
-            service_count = sum(len(table.services) for table in scenario.tables.values())
-            
-            comparison_data.append([
-                scenario_name,
-                scenario.description or "No description",
-                f"${summary['total_nominal_cost']:,.2f}",
-                f"${summary['total_present_value']:,.2f}" if self.lcp.evaluee.discount_calculations else "N/A",
-                f"${summary['average_annual_cost']:,.2f}",
-                str(service_count)
-            ])
+        for scenario_name in scenarios_to_compare:
+            if scenario_name in self.lcp.scenarios:
+                scenario = self.lcp.scenarios[scenario_name]
+                self.lcp.set_active_scenario(scenario_name)
+                calc = CostCalculator(self.lcp)
+                summary = calc.calculate_summary_statistics()
+                
+                # Count total services
+                service_count = sum(len(table.services) for table in scenario.tables.values())
+                
+                comparison_data.append([
+                    scenario_name,
+                    scenario.description or "No description",
+                    f"${summary['total_nominal_cost']:,.2f}",
+                    f"${summary['total_present_value']:,.2f}" if self.lcp.evaluee.discount_calculations else "N/A",
+                    f"${summary['average_annual_cost']:,.2f}",
+                    str(service_count)
+                ])
         
         # Restore original active scenario
         self.lcp.set_active_scenario(original_active)
         
-        comparison_df = pd.DataFrame(comparison_data, columns=['Scenario', 'Description', 'Nominal Total', 'Present Value', 'Annual Avg', 'Services'])
+        # Create columns based on whether present value is enabled
+        if self.lcp.evaluee.discount_calculations:
+            columns = ['Scenario', 'Description', 'Nominal Total', 'Present Value', 'Annual Avg', 'Services']
+        else:
+            columns = ['Scenario', 'Description', 'Nominal Total', 'Annual Avg', 'Services']
+            # Remove present value column from data
+            comparison_data = [[row[0], row[1], row[2], row[4], row[5]] for row in comparison_data]
+        
+        comparison_df = pd.DataFrame(comparison_data, columns=columns)
         comparison_df.to_excel(writer, sheet_name='Scenario Comparison', index=False)
 
     def _export_scenario_to_sheet(self, writer, scenario_name: str, calculator: CostCalculator):
@@ -467,16 +513,29 @@ class ExcelExporter:
     def _add_variance_analysis_sheet(self, writer):
         """Add variance analysis comparing all scenarios to baseline."""
         variance_data = []
-        variance_data.append(['VARIANCE ANALYSIS', '', '', '', ''])
-        variance_data.append(['Comparison of all scenarios to baseline', '', '', '', ''])
-        variance_data.append(['', '', '', '', ''])
-        variance_data.append(['Scenario', 'Nominal Difference', 'Nominal %', 'PV Difference', 'PV %'])
+        
+        # Set up headers based on discount calculations setting
+        if self.lcp.evaluee.discount_calculations:
+            variance_data.append(['VARIANCE ANALYSIS', '', '', '', ''])
+            variance_data.append(['Comparison of all scenarios to baseline', '', '', '', ''])
+            variance_data.append(['', '', '', '', ''])
+            variance_data.append(['Scenario', 'Nominal Difference', 'Nominal %', 'PV Difference', 'PV %'])
+            columns = ['Scenario', 'Nominal Diff', 'Nominal %', 'PV Diff', 'PV %']
+        else:
+            variance_data.append(['VARIANCE ANALYSIS', '', ''])
+            variance_data.append(['Comparison of all scenarios to baseline', '', ''])
+            variance_data.append(['', '', ''])
+            variance_data.append(['Scenario', 'Nominal Difference', 'Nominal %'])
+            columns = ['Scenario', 'Nominal Diff', 'Nominal %']
         
         # Find baseline scenario
         baseline_scenario = self.lcp.get_baseline_scenario()
         if not baseline_scenario:
-            variance_data.append(['No baseline scenario found', '', '', '', ''])
-            variance_df = pd.DataFrame(variance_data, columns=['Scenario', 'Nominal Diff', 'Nominal %', 'PV Diff', 'PV %'])
+            if self.lcp.evaluee.discount_calculations:
+                variance_data.append(['No baseline scenario found', '', '', '', ''])
+            else:
+                variance_data.append(['No baseline scenario found', '', ''])
+            variance_df = pd.DataFrame(variance_data, columns=columns)
             variance_df.to_excel(writer, sheet_name='Variance Analysis', index=False)
             return
         
@@ -499,21 +558,28 @@ class ExcelExporter:
             nominal_diff = summary['total_nominal_cost'] - baseline_summary['total_nominal_cost']
             nominal_pct = (nominal_diff / baseline_summary['total_nominal_cost']) * 100 if baseline_summary['total_nominal_cost'] > 0 else 0
             
-            pv_diff = summary['total_present_value'] - baseline_summary['total_present_value']
-            pv_pct = (pv_diff / baseline_summary['total_present_value']) * 100 if baseline_summary['total_present_value'] > 0 else 0
-            
-            variance_data.append([
-                scenario_name,
-                f"${nominal_diff:,.2f}",
-                f"{nominal_pct:+.1f}%",
-                f"${pv_diff:,.2f}" if self.lcp.evaluee.discount_calculations else "N/A",
-                f"{pv_pct:+.1f}%" if self.lcp.evaluee.discount_calculations else "N/A"
-            ])
+            if self.lcp.evaluee.discount_calculations:
+                pv_diff = summary['total_present_value'] - baseline_summary['total_present_value']
+                pv_pct = (pv_diff / baseline_summary['total_present_value']) * 100 if baseline_summary['total_present_value'] > 0 else 0
+                
+                variance_data.append([
+                    scenario_name,
+                    f"${nominal_diff:,.2f}",
+                    f"{nominal_pct:+.1f}%",
+                    f"${pv_diff:,.2f}",
+                    f"{pv_pct:+.1f}%"
+                ])
+            else:
+                variance_data.append([
+                    scenario_name,
+                    f"${nominal_diff:,.2f}",
+                    f"{nominal_pct:+.1f}%"
+                ])
         
         # Restore original active scenario
         self.lcp.set_active_scenario(original_active)
         
-        variance_df = pd.DataFrame(variance_data, columns=['Scenario', 'Nominal Diff', 'Nominal %', 'PV Diff', 'PV %'])
+        variance_df = pd.DataFrame(variance_data, columns=columns)
         variance_df.to_excel(writer, sheet_name='Variance Analysis', index=False)
 
     def _add_scenario_comparison_tables(self, writer):
@@ -572,7 +638,7 @@ class WordExporter:
         self.calculator = calculator
         self.lcp = calculator.lcp
     
-    def export(self, file_path: str, include_chart: bool = True, include_technical_appendix: bool = False, include_all_scenarios: bool = False) -> None:
+    def export(self, file_path: str, include_chart: bool = True, include_technical_appendix: bool = False, include_all_scenarios: bool = False, selected_scenarios: list = None) -> None:
         """Export the life care plan to Word document in landscape mode.
         
         Args:
@@ -581,9 +647,22 @@ class WordExporter:
             include_technical_appendix: Whether to include technical methodology and validation 
                                        (default: False for clean legal exhibits)
             include_all_scenarios: Whether to include all scenarios with comparison tables
+            selected_scenarios: List of scenario names to include (if None, uses all scenarios)
         """
         if include_all_scenarios and len(self.lcp.scenarios) > 1:
-            self._export_multi_scenario_word(file_path, include_chart, include_technical_appendix)
+            # Use selected scenarios or all scenarios if none specified
+            scenarios_to_export = selected_scenarios if selected_scenarios else list(self.lcp.scenarios.keys())
+            if len(scenarios_to_export) > 1:
+                self._export_multi_scenario_word(file_path, include_chart, include_technical_appendix, scenarios_to_export)
+            else:
+                # Only one scenario selected, export as single scenario
+                if scenarios_to_export:
+                    original_active = self.lcp.active_scenario
+                    self.lcp.set_active_scenario(scenarios_to_export[0])
+                    self._export_single_scenario_word(file_path, include_chart, include_technical_appendix)
+                    self.lcp.set_active_scenario(original_active)
+                else:
+                    self._export_single_scenario_word(file_path, include_chart, include_technical_appendix)
         else:
             self._export_single_scenario_word(file_path, include_chart, include_technical_appendix)
     
@@ -637,7 +716,7 @@ class WordExporter:
             ["Base Year:", str(int(self.lcp.settings.base_year))],
             ["Projection Period:", f"{self.lcp.settings.projection_years:.1f} years"],
             ["End Year:", f"{self.lcp.settings.base_year + self.lcp.settings.projection_years:.1f}"],
-            ["Discount Rate:", f"{self.lcp.settings.discount_rate:.1%}" if self.lcp.evaluee.discount_calculations else "Not Applied"]
+            ["Discount Rate:", f"{self.lcp.settings.discount_rate:.1%}" if self.lcp.evaluee.discount_calculations and self.lcp.settings.discount_rate > 0 else "Not Applied"]
         ]
         
         for i, (label, value) in enumerate(info_data):
@@ -747,7 +826,9 @@ class WordExporter:
         summary_stats = self.calculator.calculate_summary_statistics()
         
         # Create summary table with service categories
-        if self.lcp.evaluee.discount_calculations:
+        # Only show present value if discount calculations are enabled AND discount rate > 0
+        show_present_value = self.lcp.evaluee.discount_calculations and self.lcp.settings.discount_rate > 0
+        if show_present_value:
             summary_headers = ['Service Category', 'Total Lifetime Cost (Nominal)', 'Total Lifetime Cost (Present Value)']
         else:
             summary_headers = ['Service Category', 'Total Lifetime Cost (Nominal)']
@@ -804,7 +885,7 @@ class WordExporter:
             grand_total_nominal += nominal_cost
             
             # Present value cost (if applicable)
-            if self.lcp.evaluee.discount_calculations:
+            if show_present_value:
                 pv_cost = data['table_present_value_total']
                 row_cells[2].text = f"${pv_cost:,.2f}"
                 paragraph = row_cells[2].paragraphs[0]
@@ -836,7 +917,7 @@ class WordExporter:
         run.font.size = Pt(11)
         paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         
-        if self.lcp.evaluee.discount_calculations:
+        if show_present_value:
             total_row_cells[2].text = f"${grand_total_pv:,.2f}"
             paragraph = total_row_cells[2].paragraphs[0]
             run = paragraph.runs[0]
@@ -881,7 +962,7 @@ class WordExporter:
         # Economic Assumptions Documentation
         economic_para = doc.add_paragraph()
         economic_para.add_run("Economic Assumptions Used: ").bold = True
-        if self.lcp.evaluee.discount_calculations:
+        if show_present_value:
             economic_para.add_run(f"Discount Rate: {self.lcp.settings.discount_rate:.1%} annually. ")
         economic_para.add_run(f"Analysis Period: {self.lcp.settings.projection_years:.1f} years ")
         economic_para.add_run(f"({int(self.lcp.settings.base_year)} through {self.lcp.settings.base_year + self.lcp.settings.projection_years - 1:.1f}). ")
@@ -944,7 +1025,7 @@ class WordExporter:
             summary_para.add_run("Category Summary: ").bold = True
             summary_para.add_run(f"This category contains {len(data['services'])} medical service(s) with a total lifetime cost of ")
             summary_para.add_run(f"${data['table_nominal_total']:,.2f}").bold = True
-            if self.lcp.evaluee.discount_calculations:
+            if show_present_value:
                 summary_para.add_run(f" (${data['table_present_value_total']:,.2f} in present value)")
             summary_para.add_run(".")
             
@@ -979,7 +1060,7 @@ class WordExporter:
                     'Total Lifetime Cost\n(Calculated)'
                 ]
                 
-                if self.lcp.evaluee.discount_calculations:
+                if show_present_value:
                     service_table_headers.append('Present Value\nLifetime Cost\n(Calculated)')
                 
                 # Create service table
@@ -1046,7 +1127,7 @@ class WordExporter:
                         f"${service['nominal_total']:,.2f}"
                     ]
                     
-                    if self.lcp.evaluee.discount_calculations:
+                    if show_present_value:
                         service_data.append(f"${service['present_value_total']:,.2f}")
                     
                     for col_idx, cell_value in enumerate(service_data):
@@ -1078,7 +1159,7 @@ class WordExporter:
                 calculation_para = doc.add_paragraph()
                 calculation_para.add_run("Calculation Methodology: ").bold = True
                 calculation_para.add_run("Costs are projected using compound inflation modeling applied annually. ")
-                if self.lcp.evaluee.discount_calculations:
+                if show_present_value:
                     calculation_para.add_run("Present value calculations discount future costs to current dollars using ")
                     calculation_para.add_run(f"{self.lcp.settings.discount_rate:.1%} annual discount rate").bold = True
                     calculation_para.add_run(" consistent with federal economic guidelines. ")
@@ -1106,7 +1187,7 @@ class WordExporter:
         explanation_para.add_run("Understanding Your Annual Costs: ").bold = True
         explanation_para.add_run("The table below shows the total medical costs for each year of the life care plan. ")
         explanation_para.add_run("These costs represent all services combined and include inflation adjustments. ")
-        if self.lcp.evaluee.discount_calculations:
+        if show_present_value:
             explanation_para.add_run("The present value column shows what future costs are worth in today's dollars.")
         
         doc.add_paragraph()  # Spacing
@@ -1635,8 +1716,9 @@ class WordExporter:
         
         doc.save(file_path)
 
-    def _export_multi_scenario_word(self, file_path: str, include_chart: bool, include_technical_appendix: bool) -> None:
+    def _export_multi_scenario_word(self, file_path: str, include_chart: bool, include_technical_appendix: bool, selected_scenarios: list = None) -> None:
         """Export multi-scenario comparison to Word document."""
+        scenarios_to_export = selected_scenarios if selected_scenarios else list(self.lcp.scenarios.keys())
         doc = Document()
 
         # Set document to landscape orientation
@@ -1676,7 +1758,7 @@ class WordExporter:
         
         info_data = [
             ["Report Date:", datetime.now().strftime('%B %d, %Y')],
-            ["Number of Scenarios:", str(len(self.lcp.scenarios))],
+            ["Number of Scenarios:", str(len(scenarios_to_export))],
             ["Base Year:", str(int(self.lcp.settings.base_year))],
             ["Projection Period:", f"{self.lcp.settings.projection_years:.1f} years"]
         ]
@@ -1694,7 +1776,7 @@ class WordExporter:
         doc.add_heading("Executive Scenario Comparison", level=2)
         
         # Create comparison table
-        scenarios = list(self.lcp.scenarios.items())
+        scenarios = [(name, self.lcp.scenarios[name]) for name in scenarios_to_export if name in self.lcp.scenarios]
         comparison_headers = ['Metric'] + [scenario[0] for scenario in scenarios]
         
         comparison_table = doc.add_table(rows=6, cols=len(comparison_headers))

@@ -128,8 +128,8 @@ class CostCalculator:
             
             row["Total Nominal"] = float(total_nominal)
             
-            # Only include present value if discount calculations are enabled
-            if self.lcp.evaluee.discount_calculations:
+            # Only include present value if discount calculations are enabled AND discount rate > 0
+            if self.lcp.evaluee.discount_calculations and self.lcp.settings.discount_rate > 0:
                 years_from_base = year - base_year
                 present_value = self.calculate_present_value(total_nominal, years_from_base)
                 row["Present Value"] = float(present_value)
@@ -158,12 +158,12 @@ class CostCalculator:
                 for service in table.services:
                     cost = self.calculate_service_cost(service, year)
                     table_nominal += cost
-                    if self.lcp.evaluee.discount_calculations:
+                    if self.lcp.evaluee.discount_calculations and self.lcp.settings.discount_rate > 0:
                         table_pv += self.calculate_present_value(cost, years_from_base)
             
             table_stats[table_name] = {
                 "nominal_total": float(table_nominal),
-                "present_value_total": float(table_pv) if self.lcp.evaluee.discount_calculations else 0
+                "present_value_total": float(table_pv) if self.lcp.evaluee.discount_calculations and self.lcp.settings.discount_rate > 0 else 0
             }
         
         # Calculate correct average using actual number of years with costs
@@ -198,17 +198,17 @@ class CostCalculator:
                     years_from_base = year - self.lcp.settings.base_year
                     cost = self.calculate_service_cost(service, year)
                     service_nominal += cost
-                    if self.lcp.evaluee.discount_calculations:
+                    if self.lcp.evaluee.discount_calculations and self.lcp.settings.discount_rate > 0:
                         service_pv += self.calculate_present_value(cost, years_from_base)
                 
                 table_nominal += service_nominal
-                if self.lcp.evaluee.discount_calculations:
+                if self.lcp.evaluee.discount_calculations and self.lcp.settings.discount_rate > 0:
                     table_pv += service_pv
                 
                 service_details.append({
                     "name": service.name,
                     "nominal_total": float(service_nominal),
-                    "present_value_total": float(service_pv) if self.lcp.evaluee.discount_calculations else 0,
+                    "present_value_total": float(service_pv) if self.lcp.evaluee.discount_calculations and self.lcp.settings.discount_rate > 0 else 0,
                     "unit_cost": service.unit_cost,
                     "frequency_per_year": service.frequency_per_year,
                     "inflation_rate": service.inflation_rate * 100,
@@ -224,7 +224,7 @@ class CostCalculator:
             
             category_costs[table_name] = {
                 "table_nominal_total": float(table_nominal),
-                "table_present_value_total": float(table_pv) if self.lcp.evaluee.discount_calculations else 0,
+                "table_present_value_total": float(table_pv) if self.lcp.evaluee.discount_calculations and self.lcp.settings.discount_rate > 0 else 0,
                 "services": service_details
             }
         

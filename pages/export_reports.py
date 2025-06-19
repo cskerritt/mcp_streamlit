@@ -79,12 +79,91 @@ def show_export_reports_page():
                            key="multi_mode", 
                            use_container_width=True):
                     st.session_state.export_mode = "multi"
+                    # Initialize selected scenarios if not set
+                    if 'selected_scenarios' not in st.session_state:
+                        st.session_state.selected_scenarios = list(st.session_state.lcp_data.scenarios.keys())
                     st.rerun()
                 
                 if st.session_state.export_mode == "multi":
-                    st.success(f"✅ Exporting: **All {len(st.session_state.lcp_data.scenarios)} scenarios**")
+                    selected_count = len(st.session_state.get('selected_scenarios', []))
+                    st.success(f"✅ Exporting: **{selected_count} selected scenarios**")
                 else:
-                    st.markdown(f"Export all {len(st.session_state.lcp_data.scenarios)} scenarios with comparison tables")
+                    st.markdown(f"Export selected scenarios with comparison tables and full detail")
+            
+            # Scenario selection for multi-scenario mode
+            if st.session_state.export_mode == "multi":
+                st.markdown("#### 📋 Select Scenarios to Include")
+                
+                # Initialize selected scenarios if not set
+                if 'selected_scenarios' not in st.session_state:
+                    st.session_state.selected_scenarios = list(st.session_state.lcp_data.scenarios.keys())
+                
+                # Create checkboxes for each scenario
+                col1, col2 = st.columns(2)
+                scenario_list = list(st.session_state.lcp_data.scenarios.items())
+                mid_point = len(scenario_list) // 2
+                
+                with col1:
+                    for scenario_name, scenario in scenario_list[:mid_point]:
+                        current_selection = scenario_name in st.session_state.selected_scenarios
+                        new_selection = st.checkbox(
+                            f"**{scenario_name}**" + (" (Baseline)" if scenario.is_baseline else ""),
+                            value=current_selection,
+                            key=f"scenario_select_{scenario_name}",
+                            help=f"Description: {scenario.description}" if scenario.description else "No description"
+                        )
+                        
+                        # Update selection
+                        if new_selection != current_selection:
+                            if new_selection:
+                                if scenario_name not in st.session_state.selected_scenarios:
+                                    st.session_state.selected_scenarios.append(scenario_name)
+                            else:
+                                if scenario_name in st.session_state.selected_scenarios:
+                                    st.session_state.selected_scenarios.remove(scenario_name)
+                
+                with col2:
+                    for scenario_name, scenario in scenario_list[mid_point:]:
+                        current_selection = scenario_name in st.session_state.selected_scenarios
+                        new_selection = st.checkbox(
+                            f"**{scenario_name}**" + (" (Baseline)" if scenario.is_baseline else ""),
+                            value=current_selection,
+                            key=f"scenario_select_{scenario_name}",
+                            help=f"Description: {scenario.description}" if scenario.description else "No description"
+                        )
+                        
+                        # Update selection
+                        if new_selection != current_selection:
+                            if new_selection:
+                                if scenario_name not in st.session_state.selected_scenarios:
+                                    st.session_state.selected_scenarios.append(scenario_name)
+                            else:
+                                if scenario_name in st.session_state.selected_scenarios:
+                                    st.session_state.selected_scenarios.remove(scenario_name)
+                
+                # Quick selection buttons
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    if st.button("✅ Select All", use_container_width=True):
+                        st.session_state.selected_scenarios = list(st.session_state.lcp_data.scenarios.keys())
+                        st.rerun()
+                with col2:
+                    if st.button("❌ Clear All", use_container_width=True):
+                        st.session_state.selected_scenarios = []
+                        st.rerun()
+                with col3:
+                    if st.button("🏠 Baseline Only", use_container_width=True):
+                        baseline = st.session_state.lcp_data.get_baseline_scenario()
+                        st.session_state.selected_scenarios = [baseline.name] if baseline else []
+                        st.rerun()
+                
+                # Validation
+                if not st.session_state.selected_scenarios:
+                    st.warning("⚠️ Please select at least one scenario to export.")
+                elif len(st.session_state.selected_scenarios) == 1:
+                    st.info("ℹ️ Only one scenario selected. Consider using single scenario mode for simpler output.")
+                else:
+                    st.success(f"✅ {len(st.session_state.selected_scenarios)} scenarios selected for export")
             
             st.markdown("---")
         else:
@@ -138,8 +217,13 @@ def show_export_reports_page():
             """)
             
             include_all_scenarios = has_multiple_scenarios and st.session_state.get('export_mode') == 'multi'
+            selected_scenarios = st.session_state.get('selected_scenarios', []) if include_all_scenarios else []
+            
             if st.button("📊 Export to Excel", use_container_width=True):
-                export_to_excel(calculator, include_all_scenarios)
+                if include_all_scenarios and not selected_scenarios:
+                    st.error("Please select at least one scenario to export.")
+                else:
+                    export_to_excel(calculator, include_all_scenarios, selected_scenarios)
         
         with col2:
             st.markdown("### 📝 Word Document")
@@ -152,7 +236,10 @@ def show_export_reports_page():
             """)
             
             if st.button("📝 Export to Word", use_container_width=True):
-                export_to_word(calculator, include_all_scenarios)
+                if include_all_scenarios and not selected_scenarios:
+                    st.error("Please select at least one scenario to export.")
+                else:
+                    export_to_word(calculator, include_all_scenarios, selected_scenarios)
         
         with col3:
             st.markdown("### 📄 PDF Report")
@@ -186,7 +273,7 @@ def show_export_reports_page():
         st.error(f"Error preparing exports: {str(e)}")
         st.exception(e)
 
-def export_to_excel(calculator, include_all_scenarios=False):
+def export_to_excel(calculator, include_all_scenarios=False, selected_scenarios=None):
     """Export to Excel format."""
     try:
         with st.spinner("Generating Excel report..."):
@@ -205,7 +292,7 @@ def export_to_excel(calculator, include_all_scenarios=False):
             
             with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
                 # Export to temporary file
-                ExcelExporter(calculator).export(tmp_file.name, include_all_scenarios=include_all_scenarios)
+                ExcelExporter(calculator).export(tmp_file.name, include_all_scenarios=include_all_scenarios, selected_scenarios=selected_scenarios)
                 
                 # Read file for download
                 with open(tmp_file.name, 'rb') as f:
@@ -227,7 +314,7 @@ def export_to_excel(calculator, include_all_scenarios=False):
     except Exception as e:
         st.error(f"Error generating Excel report: {str(e)}")
 
-def export_to_word(calculator, include_all_scenarios=False):
+def export_to_word(calculator, include_all_scenarios=False, selected_scenarios=None):
     """Export to Word format."""
     try:
         with st.spinner("Generating Word document..."):
@@ -246,7 +333,7 @@ def export_to_word(calculator, include_all_scenarios=False):
             
             with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as tmp_file:
                 # Export to temporary file
-                WordExporter(calculator).export(tmp_file.name, include_all_scenarios=include_all_scenarios)
+                WordExporter(calculator).export(tmp_file.name, include_all_scenarios=include_all_scenarios, selected_scenarios=selected_scenarios)
                 
                 # Read file for download
                 with open(tmp_file.name, 'rb') as f:

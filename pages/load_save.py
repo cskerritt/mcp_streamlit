@@ -125,10 +125,36 @@ def show_save_tab():
     # Save options
     st.markdown("### Save Options")
     
+    # Multi-scenario export option
+    has_multiple_scenarios = len(st.session_state.lcp_data.scenarios) > 1
+    if has_multiple_scenarios:
+        st.markdown("#### 🎭 Scenario Export Options")
+        include_all_scenarios = st.checkbox(
+            "Include All Scenarios",
+            value=True,
+            help="When checked, exports all scenarios to prevent data loss. When unchecked, only exports the current active scenario."
+        )
+        
+        if include_all_scenarios:
+            st.info(f"✅ Will export all {len(st.session_state.lcp_data.scenarios)} scenarios")
+            scenarios_to_export = list(st.session_state.lcp_data.scenarios.keys())
+            for scenario_name in scenarios_to_export:
+                scenario = st.session_state.lcp_data.scenarios[scenario_name]
+                baseline_text = " (Baseline)" if scenario.is_baseline else ""
+                st.write(f"  • **{scenario_name}**{baseline_text}")
+        else:
+            current_scenario = st.session_state.lcp_data.get_current_scenario()
+            st.warning(f"⚠️ Only exporting current scenario: **{current_scenario.name if current_scenario else 'Unknown'}**")
+    else:
+        include_all_scenarios = False
+    
     # Generate filename
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     evaluee_name = st.session_state.lcp_data.evaluee.name.replace(" ", "_")
-    default_filename = f"{evaluee_name}_config_{timestamp}.json"
+    if has_multiple_scenarios and include_all_scenarios:
+        default_filename = f"{evaluee_name}_complete_config_{timestamp}.json"
+    else:
+        default_filename = f"{evaluee_name}_config_{timestamp}.json"
     
     filename = st.text_input(
         "Configuration Filename",
@@ -137,11 +163,12 @@ def show_save_tab():
     )
     
     if st.button("💾 Save Configuration", use_container_width=True):
-        save_configuration(filename)
+        save_configuration(filename, include_all_scenarios)
     
     # Preview configuration
     with st.expander("Preview Configuration JSON", expanded=False):
-        config_data = create_config_data()
+        preview_include_all = include_all_scenarios if has_multiple_scenarios else False
+        config_data = create_config_data(preview_include_all)
         st.json(config_data)
 
 def show_format_tab():
@@ -249,10 +276,10 @@ def load_configuration(config_data):
     except Exception as e:
         st.error(f"Error loading configuration: {str(e)}")
 
-def save_configuration(filename):
+def save_configuration(filename, include_all_scenarios=False):
     """Save the current configuration to a file."""
     try:
-        config_data = create_config_data()
+        config_data = create_config_data(include_all_scenarios)
         
         # Create JSON string
         json_str = json.dumps(config_data, indent=2)
@@ -265,12 +292,15 @@ def save_configuration(filename):
             mime="application/json"
         )
         
-        st.success("✅ Configuration ready for download!")
+        if include_all_scenarios:
+            st.success("✅ Complete configuration with all scenarios ready for download!")
+        else:
+            st.success("✅ Configuration ready for download!")
         
     except Exception as e:
         st.error(f"Error saving configuration: {str(e)}")
 
-def create_config_data():
+def create_config_data(include_all_scenarios=False):
     """Create configuration data from current session state."""
     config_data = {
         "evaluee_name": st.session_state.lcp_data.evaluee.name,
@@ -278,35 +308,77 @@ def create_config_data():
         "base_year": st.session_state.lcp_data.settings.base_year,
         "projection_years": st.session_state.lcp_data.settings.projection_years,
         "discount_rate": st.session_state.lcp_data.settings.discount_rate,
-        "tables": {}
+        "discount_calculations": st.session_state.lcp_data.evaluee.discount_calculations
     }
     
-    for table_name, table in st.session_state.lcp_data.tables.items():
-        config_data["tables"][table_name] = []
-        for service in table.services:
-            service_data = {
-                "name": service.name,
-                "inflation_rate": service.inflation_rate,
-                "unit_cost": service.unit_cost,
-                "frequency_per_year": service.frequency_per_year
+    # Single scenario mode (backwards compatibility)
+    if not include_all_scenarios or len(st.session_state.lcp_data.scenarios) == 1:
+        config_data["tables"] = {}
+        
+        for table_name, table in st.session_state.lcp_data.tables.items():
+            config_data["tables"][table_name] = []
+            for service in table.services:
+                service_data = create_service_data(service)
+                config_data["tables"][table_name].append(service_data)
+    
+    # Multi-scenario mode 
+    else:
+        config_data["scenarios"] = {}
+        config_data["active_scenario"] = st.session_state.lcp_data.active_scenario
+        
+        for scenario_name, scenario in st.session_state.lcp_data.scenarios.items():
+            scenario_data = {
+                "name": scenario.name,
+                "description": scenario.description,
+                "is_baseline": scenario.is_baseline,
+                "tables": {}
             }
             
-            if service.is_one_time_cost:
-                service_data.update({
-                    "is_one_time_cost": True,
-                    "one_time_cost_year": service.one_time_cost_year
-                })
-            elif service.occurrence_years:
-                service_data["occurrence_years"] = service.occurrence_years
-            else:
-                service_data.update({
-                    "start_year": service.start_year,
-                    "end_year": service.end_year
-                })
+            for table_name, table in scenario.tables.items():
+                scenario_data["tables"][table_name] = []
+                for service in table.services:
+                    service_data = create_service_data(service)
+                    scenario_data["tables"][table_name].append(service_data)
             
-            config_data["tables"][table_name].append(service_data)
+            config_data["scenarios"][scenario_name] = scenario_data
     
     return config_data
+
+def create_service_data(service):
+    """Create service data dictionary from a service object."""
+    service_data = {
+        "name": service.name,
+        "inflation_rate": service.inflation_rate,
+        "unit_cost": service.unit_cost,
+        "frequency_per_year": service.frequency_per_year
+    }
+    
+    # Handle distributed instances
+    if hasattr(service, 'is_distributed_instances') and service.is_distributed_instances:
+        service_data.update({
+            "is_distributed_instances": True,
+            "total_instances": service.total_instances,
+            "distribution_period_years": service.distribution_period_years,
+            "start_year": service.start_year,
+            "end_year": service.end_year
+        })
+    # Handle one-time costs
+    elif service.is_one_time_cost:
+        service_data.update({
+            "is_one_time_cost": True,
+            "one_time_cost_year": service.one_time_cost_year
+        })
+    # Handle discrete occurrences
+    elif service.occurrence_years:
+        service_data["occurrence_years"] = service.occurrence_years
+    # Handle recurring services
+    else:
+        service_data.update({
+            "start_year": service.start_year,
+            "end_year": service.end_year
+        })
+    
+    return service_data
 
 def load_sample_basic_plan():
     """Load a basic sample plan."""

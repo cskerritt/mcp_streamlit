@@ -1129,8 +1129,10 @@ def show_unified_view_edit():
                 # Quick edit form
                 if st.session_state.get(f"editing_unified_{table_name}_{service_index}", False):
                     with st.form(f"quick_edit_{table_name}_{service_index}"):
-                        st.markdown(f"**Quick Edit: {service.name}**")
+                        st.markdown(f"**Enhanced Edit: {service.name}**")
                         
+                        # Cost and frequency section
+                        st.subheader("💰 Cost Information")
                         col1, col2, col3 = st.columns(3)
                         with col1:
                             new_cost = st.number_input("Unit Cost ($):", value=float(service.unit_cost), min_value=0.0)
@@ -1139,12 +1141,189 @@ def show_unified_view_edit():
                         with col3:
                             new_inflation = st.number_input("Inflation (%):", value=float(service.inflation_rate * 100), min_value=0.0, max_value=20.0)
                         
+                        # Timing section
+                        st.subheader("📅 Service Timing")
+                        
+                        # Determine current service type and show appropriate editing interface
+                        if service.is_one_time_cost:
+                            st.markdown("**Service Type:** One-time Cost")
+                            new_one_time_year = st.number_input(
+                                "Year of Occurrence:", 
+                                value=int(service.one_time_cost_year) if service.one_time_cost_year else st.session_state.lcp_data.settings.base_year, 
+                                step=1
+                            )
+                            # Display age for one-time cost year
+                            display_age_info(
+                                new_one_time_year,
+                                st.session_state.lcp_data.evaluee.current_age,
+                                st.session_state.lcp_data.settings.base_year
+                            )
+                            
+                        elif service.occurrence_years:
+                            st.markdown("**Service Type:** Discrete Occurrences")
+                            
+                            # Edit mode selection
+                            edit_mode = st.radio(
+                                "Edit Mode:",
+                                ["Text Input", "Year Selector"],
+                                horizontal=True,
+                                key=f"edit_mode_unified_{table_name}_{service_index}"
+                            )
+                            
+                            if edit_mode == "Text Input":
+                                occurrence_years_str = st.text_input(
+                                    "Occurrence Years (comma-separated):",
+                                    value=", ".join(map(str, service.occurrence_years))
+                                )
+                                # Display ages for entered years
+                                if occurrence_years_str:
+                                    try:
+                                        new_occurrence_years = [int(year.strip()) for year in occurrence_years_str.split(',')]
+                                        display_age_info(
+                                            new_occurrence_years,
+                                            st.session_state.lcp_data.evaluee.current_age,
+                                            st.session_state.lcp_data.settings.base_year
+                                        )
+                                    except ValueError:
+                                        st.warning("Please enter valid years separated by commas")
+                                        new_occurrence_years = service.occurrence_years
+                            else:
+                                # Multi-select for years
+                                base_year = st.session_state.lcp_data.settings.base_year
+                                end_year = base_year + int(st.session_state.lcp_data.settings.projection_years)
+                                if st.session_state.lcp_data.settings.projection_years % 1 != 0:
+                                    end_year += 1
+                                available_years = list(range(base_year, end_year))
+                                
+                                new_occurrence_years = st.multiselect(
+                                    "Select Years:",
+                                    options=available_years,
+                                    default=service.occurrence_years,
+                                    key=f"occurrence_years_unified_{table_name}_{service_index}"
+                                )
+                                # Display ages for selected years
+                                if new_occurrence_years:
+                                    display_age_info(
+                                        new_occurrence_years,
+                                        st.session_state.lcp_data.evaluee.current_age,
+                                        st.session_state.lcp_data.settings.base_year
+                                    )
+                                    
+                        elif hasattr(service, 'is_distributed_instances') and service.is_distributed_instances:
+                            st.markdown("**Service Type:** Distributed Instances")
+                            col1, col2, col3 = st.columns(3)
+                            with col1:
+                                new_start_year = st.number_input(
+                                    "Start Year:", 
+                                    value=int(service.start_year) if service.start_year else st.session_state.lcp_data.settings.base_year, 
+                                    step=1
+                                )
+                            with col2:
+                                new_total_instances = st.number_input(
+                                    "Total Instances:",
+                                    value=int(service.total_instances) if hasattr(service, 'total_instances') and service.total_instances else 10,
+                                    min_value=1,
+                                    step=1
+                                )
+                            with col3:
+                                new_distribution_period = st.number_input(
+                                    "Distribution Period (years):",
+                                    value=float(service.distribution_period_years) if hasattr(service, 'distribution_period_years') and service.distribution_period_years else 5.0,
+                                    min_value=0.1,
+                                    step=0.1
+                                )
+                            
+                            # Calculate and show frequency per year
+                            calculated_freq = new_total_instances / new_distribution_period
+                            st.info(f"💡 Calculated frequency: {calculated_freq:.2f} per year")
+                            
+                            # Display age range
+                            end_year_calc = new_start_year + new_distribution_period
+                            display_age_info(
+                                [new_start_year, int(end_year_calc)],
+                                st.session_state.lcp_data.evaluee.current_age,
+                                st.session_state.lcp_data.settings.base_year
+                            )
+                            
+                        else:
+                            st.markdown("**Service Type:** Recurring")
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                new_start_year = st.number_input(
+                                    "Start Year:", 
+                                    value=int(service.start_year) if service.start_year else st.session_state.lcp_data.settings.base_year, 
+                                    step=1
+                                )
+                                # Display age for start year
+                                start_age = calculate_age_for_year(
+                                    st.session_state.lcp_data.settings.base_year,
+                                    st.session_state.lcp_data.evaluee.current_age,
+                                    new_start_year
+                                )
+                                st.caption(f"📅 Start age: **{start_age:.1f} years old**")
+                            with col2:
+                                new_end_year = st.number_input(
+                                    "End Year:", 
+                                    value=int(service.end_year) if service.end_year else st.session_state.lcp_data.settings.base_year + int(st.session_state.lcp_data.settings.projection_years) - 1, 
+                                    step=1
+                                )
+                                # Display age for end year
+                                end_age = calculate_age_for_year(
+                                    st.session_state.lcp_data.settings.base_year,
+                                    st.session_state.lcp_data.evaluee.current_age,
+                                    new_end_year
+                                )
+                                st.caption(f"📅 End age: **{end_age:.1f} years old**")
+                            
+                            # Show duration
+                            duration = new_end_year - new_start_year + 1
+                            st.info(f"💡 Service duration: {duration} years")
+                        
                         col1, col2 = st.columns(2)
                         with col1:
                             if st.form_submit_button("💾 Save", use_container_width=True):
+                                # Update cost and frequency information
                                 service.unit_cost = new_cost
                                 service.frequency_per_year = new_freq
                                 service.inflation_rate = new_inflation / 100
+                                
+                                # Update timing information based on service type
+                                if service.is_one_time_cost:
+                                    service.one_time_cost_year = new_one_time_year
+                                    
+                                elif service.occurrence_years:
+                                    if edit_mode == "Text Input":
+                                        if occurrence_years_str:
+                                            try:
+                                                service.occurrence_years = [int(year.strip()) for year in occurrence_years_str.split(',')]
+                                            except ValueError:
+                                                st.error("Invalid years format. Changes not saved.")
+                                                return  # Exit without saving
+                                    else:
+                                        service.occurrence_years = new_occurrence_years
+                                        
+                                elif hasattr(service, 'is_distributed_instances') and service.is_distributed_instances:
+                                    service.start_year = new_start_year
+                                    service.total_instances = new_total_instances
+                                    service.distribution_period_years = new_distribution_period
+                                    # Update the calculated frequency
+                                    service.frequency_per_year = new_total_instances / new_distribution_period
+                                    # Update end year for consistency
+                                    service.end_year = int(new_start_year + new_distribution_period)
+                                    
+                                else:  # Recurring service
+                                    service.start_year = new_start_year
+                                    service.end_year = new_end_year
+                                
+                                # Recalculate and update any dependent calculations
+                                # This triggers auto-recalculation of the life care plan
+                                try:
+                                    from src.calculator import CostCalculator
+                                    calculator = CostCalculator(st.session_state.lcp_data)
+                                    # This will trigger recalculation when called
+                                    summary = calculator.calculate_summary_statistics()
+                                except Exception as e:
+                                    st.warning(f"Recalculation warning: {str(e)}")
                                 
                                 # Auto-save if enabled
                                 if st.session_state.get('auto_save', True):
@@ -1154,7 +1333,7 @@ def show_unified_view_edit():
                                     except Exception as e:
                                         st.warning(f"Auto-save failed: {str(e)}")
                                 
-                                st.success("✅ Service updated!")
+                                st.success("✅ Service updated with automatic recalculation!")
                                 del st.session_state[f"editing_unified_{table_name}_{service_index}"]
                                 st.rerun()
                         
