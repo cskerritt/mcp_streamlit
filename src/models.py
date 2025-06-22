@@ -30,6 +30,11 @@ class Service:
     total_instances: Optional[int] = None
     distribution_period_years: Optional[float] = None
     
+    # Interval-based service support (e.g., every 3.5 years)
+    is_interval_based: bool = False
+    interval_years: Optional[float] = None
+    interval_start_year: Optional[int] = None
+    
     def __post_init__(self):
         """Validate service data after initialization."""
         if not self.is_one_time_cost:
@@ -72,6 +77,15 @@ class Service:
                 raise ValueError("Distributed instances must have a positive distribution period")
             # Calculate effective frequency per year based on distribution
             self.frequency_per_year = self.total_instances / self.distribution_period_years
+        
+        # Validate interval-based services
+        if self.is_interval_based:
+            if self.interval_years is None or self.interval_years <= 0:
+                raise ValueError("Interval-based services must have a positive interval period")
+            if self.interval_start_year is None:
+                raise ValueError("Interval-based services must have a start year")
+            # Calculate effective frequency per year based on interval
+            self.frequency_per_year = 1.0 / self.interval_years
 
 
 @dataclass

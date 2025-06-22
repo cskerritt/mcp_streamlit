@@ -34,6 +34,23 @@ def get_service_years(service):
     
     if service.is_one_time_cost and service.one_time_cost_year:
         years.add(service.one_time_cost_year)
+    elif hasattr(service, 'is_interval_based') and service.is_interval_based:
+        if service.interval_start_year and service.interval_years:
+            # Calculate all interval occurrences within projection period
+            # We need to get the end year from session state
+            if hasattr(st.session_state, 'lcp_data') and st.session_state.lcp_data:
+                base_year = st.session_state.lcp_data.settings.base_year
+                projection_years = st.session_state.lcp_data.settings.projection_years
+                end_year = base_year + int(projection_years)
+                
+                # For decimal intervals, calculate the fractional year positions and round to nearest year
+                current_fractional_year = float(service.interval_start_year)
+                while current_fractional_year <= end_year:
+                    # Round to nearest integer year
+                    occurrence_year = round(current_fractional_year)
+                    if occurrence_year <= end_year:
+                        years.add(occurrence_year)
+                    current_fractional_year += service.interval_years
     elif service.occurrence_years:
         years.update(service.occurrence_years)
     elif service.start_year and service.end_year:
@@ -59,6 +76,21 @@ def check_service_overlaps(new_service_data, table_name, exclude_service_index=N
     
     if new_service_data.get('is_one_time_cost') and new_service_data.get('one_time_cost_year'):
         new_years.add(new_service_data['one_time_cost_year'])
+    elif new_service_data.get('is_interval_based'):
+        if new_service_data.get('interval_start_year') and new_service_data.get('interval_years'):
+            # Calculate all interval occurrences within projection period
+            base_year = st.session_state.lcp_data.settings.base_year
+            projection_years = st.session_state.lcp_data.settings.projection_years
+            end_year = base_year + int(projection_years)
+            
+            # For decimal intervals, calculate the fractional year positions and round to nearest year
+            current_fractional_year = float(new_service_data['interval_start_year'])
+            while current_fractional_year <= end_year:
+                # Round to nearest integer year
+                occurrence_year = round(current_fractional_year)
+                if occurrence_year <= end_year:
+                    new_years.add(occurrence_year)
+                current_fractional_year += new_service_data['interval_years']
     elif new_service_data.get('occurrence_years'):
         new_years.update(new_service_data['occurrence_years'])
     elif new_service_data.get('start_year') and new_service_data.get('end_year'):
@@ -150,13 +182,21 @@ def show_tables_overview():
                 # Create DataFrame for display
                 services_data = []
                 for i, service in enumerate(table.services):
-                    service_type = "One-time" if service.is_one_time_cost else ("Discrete" if service.occurrence_years else "Recurring")
-
                     if service.is_one_time_cost:
+                        service_type = "One-time"
                         timing = f"Year {service.one_time_cost_year}"
+                    elif hasattr(service, 'is_interval_based') and service.is_interval_based:
+                        if service.interval_years == int(service.interval_years):
+                            service_type = f"Every {int(service.interval_years)} years"
+                            timing = f"Starting {service.interval_start_year}, every {int(service.interval_years)} years"
+                        else:
+                            service_type = f"Every {service.interval_years:.1f} years"
+                            timing = f"Starting {service.interval_start_year}, every {service.interval_years:.1f} years"
                     elif service.occurrence_years:
+                        service_type = "Discrete"
                         timing = f"Years: {', '.join(map(str, service.occurrence_years))}"
                     else:
+                        service_type = "Recurring"
                         timing = f"{service.start_year} - {service.end_year}"
 
                     # Handle cost display
@@ -415,7 +455,7 @@ def show_add_service_form(table: ServiceTable):
         st.subheader("Service Timing")
         service_type = st.radio(
             "Service Type",
-            ["Recurring", "Discrete Occurrences", "One-time Cost", "Specific Years", "Distributed Instances"],
+            ["Recurring", "Discrete Occurrences", "One-time Cost", "Specific Years", "Distributed Instances", "Interval Based (Every X Years)"],
             help="How often this service occurs"
         )
         
@@ -559,6 +599,62 @@ def show_add_service_form(table: ServiceTable):
             )
             st.caption(f"📅 Distribution period: Age {start_age:.1f} to {end_age:.1f} ({distribution_start_year} to {distribution_end_year:.1f})")
             
+        elif service_type == "Interval Based (Every X Years)":
+            st.markdown("**Interval-Based Service Configuration:**")
+            st.caption("Service occurs at regular intervals (e.g., every 5-7 years)")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                interval_years = st.number_input(
+                    "Interval (Years) *",
+                    min_value=0.1,
+                    max_value=20.0,
+                    value=6.0,
+                    step=0.1,
+                    format="%.1f",
+                    help="How often the service occurs (e.g., 3.5 means every 3.5 years, 6.0 means every 6 years)"
+                )
+            with col2:
+                interval_start_year = st.number_input(
+                    "First Occurrence Year *",
+                    min_value=st.session_state.lcp_data.settings.base_year,
+                    value=st.session_state.lcp_data.settings.base_year,
+                    step=1,
+                    help="Year of the first occurrence"
+                )
+            
+            # Calculate and display all occurrences within projection period
+            base_year = st.session_state.lcp_data.settings.base_year
+            projection_years = st.session_state.lcp_data.settings.projection_years
+            end_year = base_year + int(projection_years)
+            
+            occurrence_years_preview = []
+            current_fractional_year = float(interval_start_year)
+            while current_fractional_year <= end_year:
+                # Round to nearest integer year for display
+                occurrence_year = round(current_fractional_year)
+                if occurrence_year <= end_year and occurrence_year not in occurrence_years_preview:
+                    occurrence_years_preview.append(occurrence_year)
+                current_fractional_year += interval_years
+            
+            # Sort the years
+            occurrence_years_preview.sort()
+            
+            if occurrence_years_preview:
+                st.info(f"🗓️ Service will occur in {len(occurrence_years_preview)} years: {', '.join(map(str, occurrence_years_preview))}")
+                
+                # Display ages for interval occurrences
+                display_age_info(
+                    occurrence_years_preview,
+                    st.session_state.lcp_data.evaluee.current_age,
+                    st.session_state.lcp_data.settings.base_year
+                )
+                
+                # Show frequency info
+                if len(occurrence_years_preview) > 1:
+                    avg_frequency = len(occurrence_years_preview) / (occurrence_years_preview[-1] - occurrence_years_preview[0] + 1)
+                    st.caption(f"💡 Average frequency: {avg_frequency:.3f} occurrences per year")
+            
         else:  # One-time cost
             one_time_year = st.number_input(
                 "Year of Occurrence",
@@ -589,7 +685,10 @@ def show_add_service_form(table: ServiceTable):
                 "is_one_time_cost": False,
                 "one_time_cost_year": None,
                 "is_distributed_instances": False,
-                "distribution_period_years": None
+                "distribution_period_years": None,
+                "is_interval_based": False,
+                "interval_years": None,
+                "interval_start_year": None
             }
             
             # Set timing data based on service type
@@ -609,12 +708,16 @@ def show_add_service_form(table: ServiceTable):
                 overlap_check_data["is_distributed_instances"] = True
                 overlap_check_data["start_year"] = distribution_start_year
                 overlap_check_data["distribution_period_years"] = distribution_period
+            elif service_type == "Interval Based (Every X Years)":
+                overlap_check_data["is_interval_based"] = True
+                overlap_check_data["interval_years"] = interval_years
+                overlap_check_data["interval_start_year"] = interval_start_year
             else:  # One-time cost
                 overlap_check_data["is_one_time_cost"] = True
                 overlap_check_data["one_time_cost_year"] = one_time_year
             
             # Check for overlaps
-            overlaps = check_service_overlaps(overlap_check_data, selected_table)
+            overlaps = check_service_overlaps(overlap_check_data, table.name)
             
             # Display overlap warnings but allow user to proceed
             if overlaps:
@@ -693,6 +796,21 @@ def show_add_service_form(table: ServiceTable):
                         "start_year": distribution_start_year,
                         "end_year": int(distribution_start_year + distribution_period),
                         "frequency_per_year": total_instances / distribution_period  # This will be calculated in __post_init__
+                    })
+                elif service_type == "Interval Based (Every X Years)":
+                    if interval_years <= 0:
+                        st.error("Interval years must be greater than zero.")
+                        return
+                    if interval_start_year < st.session_state.lcp_data.settings.base_year:
+                        st.error("Start year cannot be before the base year.")
+                        return
+                    
+                    # Set up interval-based service parameters
+                    service_params.update({
+                        "is_interval_based": True,
+                        "interval_years": interval_years,
+                        "interval_start_year": interval_start_year,
+                        "frequency_per_year": 1.0 / interval_years  # This will be calculated in __post_init__
                     })
                 else:  # One-time cost
                     service_params.update({
